@@ -359,11 +359,11 @@ function genCrates() {
   crates.length = 0;
   for (let n = Math.min(2 + Math.floor(level / 4), 7), tries = 0; crates.length < n && tries < 80; tries++) {
     const x = rand(180, 980), y = rand(150, 490);
-    if (Math.hypot(x - W / 2, y - H / 2) > 170 && (!story || onFloor(x, y, 50)) && crates.every(c => Math.hypot(c.x - x, c.y - y) > 150)) crates.push({ x, y, hw: 28, hh: 28 });
+    if (Math.hypot(x - W / 2, y - H / 2) > 170 && (!story || (onFloor(x, y, 50) && !curOnLane(x, y))) && crates.every(c => Math.hypot(c.x - x, c.y - y) > 150)) crates.push({ x, y, hw: 28, hh: 28 });
   }
   for (let n = level >= 1 ? Math.min(1 + Math.floor(level / 5), 3) : 0, tries = 0, got = 0; got < n && tries < 80; tries++) {
     const x = rand(160, 1000), y = rand(130, 510);
-    if (Math.hypot(x - W / 2, y - H / 2) > 150 && (!story || onFloor(x, y, 40)) && crates.every(c => Math.hypot(c.x - x, c.y - y) > 90)) { crates.push({ x, y, hw: 16, hh: 16, bar: true }); got++; }
+    if (Math.hypot(x - W / 2, y - H / 2) > 150 && (!story || (onFloor(x, y, 40) && !curOnLane(x, y))) && crates.every(c => Math.hypot(c.x - x, c.y - y) > 90)) { crates.push({ x, y, hw: 16, hh: 16, bar: true }); got++; }
   }
 }
 function pushOut(o, hw, hh) {                       // push a box out of every crate along the shallowest axis
@@ -532,29 +532,29 @@ const ROOMS = {
   '0,0': { n: 'Fallen Gate', lv: 0, ex: 'e,s', bench: 1, en: 0, lore: ['The Gate fell silent when the Core went dark.', 'سقطت البوابة في الصمت لما انطفأت النواة.'] },
   '1,0': { n: 'Dust Hall', lv: 0, ex: 'w,e,s', en: 3, tun: 'h', hz: 1, lore: ['Wardens swore to hold the arena. One by one, they broke.', 'أقسم الحراس على حماية الساحة. ثم انكسروا واحدًا بعد واحد.'] },
   '2,0': { n: 'Cracked Court', lv: 1, ex: 'w,s', en: 4, hz: 2, charm: 'fang', lore: ['Shards crawl where the stone remembers blood.', 'تزحف الشظايا حيث تتذكّر الحجارة الدم.'] },
-  '0,1': { n: 'Quiet Cellar', lv: 0, ex: 'n,e,s', en: 3, tun: 'v', pits: [[514, 160, 124, 116]], lore: ['Below the cellar, a lantern still burns for the one who returns.', 'تحت القبو، فانوس ما زال مشتعلًا لمن يعود.'], charm: 'heart' },
+  '0,1': { n: 'Quiet Cellar', lv: 0, ex: 'n,e,s', en: 3, tun: 'v', pits: [[514, 190, 124, 84]], lore: ['Below the cellar, a lantern still burns for the one who returns.', 'تحت القبو، فانوس ما زال مشتعلًا لمن يعود.'], charm: 'heart' },
   '1,1': { n: 'Heart Hall', lv: 1, ex: 'n,w,e,s', bench: 1, en: 0, merchant: 1 },
-  '2,1': { n: 'Lantern Vault', lv: 1, ex: 'n,w', treasure: 'nova', en: 2, types: ['tank'], pits: [[190, 258, 116, 124]] },
+  '2,1': { n: 'Lantern Vault', lv: 1, ex: 'n,w', treasure: 'nova', en: 2, types: ['tank'], pits: [[200, 258, 84, 124]] },
   '0,2': { n: 'Low Passage', lv: 2, ex: 'n,e', en: 4, tun: 'h', rain: 1, hz: 1, charm: 'soul' },
-  '1,2': { n: 'Silent Stair', lv: 2, ex: 'n,w,e', crack: 'e', en: 4, rain: 1, pits: [[790, 258, 116, 124]], lore: ['The Colossus guards the last door. It was the first to fall.', 'العملاق يحرس الباب الأخير. وكان أول من سقط.'] },
+  '1,2': { n: 'Silent Stair', lv: 2, ex: 'n,w,e', crack: 'e', en: 4, rain: 1, pits: [[800, 258, 84, 124]], lore: ['The Colossus guards the last door. It was the first to fall.', 'العملاق يحرس الباب الأخير. وكان أول من سقط.'] },
   '2,2': { n: 'The Colossus', lv: 9, ex: 'w,s', boss: 1, lock: 's', bn: 'The Colossus', bhp: 2600, after: 'The ruins fall silent. A frozen path opens to the south...' },
   '2,3': { n: 'Frozen Gate', lv: 3, ex: 'n,w', bench: 1, en: 0, lore: ['The cold came from below, and the Warden came with it.', 'جاء البرد من الأسفل، وجاء الحارس معه.'] },
-  '1,3': { n: 'Icicle Hall', lv: 3, ex: 'e,w,s', en: 5, rain: 1, pits: [[190, 258, 116, 124]] },
+  '1,3': { n: 'Icicle Hall', lv: 3, ex: 'e,w,s', en: 5, rain: 1, pits: [[200, 258, 84, 124]] },
   '0,3': { n: 'Whiteout Vault', lv: 3, ex: 'e,s', en: 3, treasure: 'drift', types: ['tank', 'shooter'] },
   '0,4': { n: 'Hollow Stairs', lv: 4, ex: 'n,e', en: 5, tun: 'v', lore: ['Those who rushed the chasm never reached the other side.', 'من اندفعوا نحو الهوّة لم يصلوا إلى الجانب الآخر.'] },
-  '1,4': { n: 'Cold Heart', lv: 4, ex: 'n,w,e,s', bench: 1, merchant: 1, en: 0, pits: [[514, 346, 124, 176]], lore: ['Only a farther leap crosses the Warden’s chasm.', 'قفزة أبعد وحدها تعبر هوّة الحارس.'] },
+  '1,4': { n: 'Cold Heart', lv: 4, ex: 'n,w,e,s', bench: 1, merchant: 1, en: 0, pits: [[514, 346, 124, 150]], lore: ['Only a farther leap crosses the Warden’s chasm.', 'قفزة أبعد وحدها تعبر هوّة الحارس.'] },
   '2,4': { n: 'Frost Court', lv: 4, ex: 'w', en: 5, hz: 2, charm: 'frost' },
   '1,5': { n: 'The Warden', lv: 19, ex: 'n,e', lock: 'e', lkey: 'boss2', boss: 1, bk: 'boss2', bn: 'The Warden', bhp: 3600, after: 'The cold recedes. A burning bridge appears to the east...' },
-  '2,5': { n: 'Ashen Bridge', lv: 5, ex: 'w,e', tun: 'h', en: 5, rain: 1, pits: [[780, 258, 160, 124]], lore: ['The bridge burns without fire. Do not look down.', 'يحترق الجسر من غير نار. لا تنظر إلى الأسفل.'] },
+  '2,5': { n: 'Ashen Bridge', lv: 5, ex: 'w,e', tun: 'h', en: 5, rain: 1, pits: [[780, 258, 150, 124]], lore: ['The bridge burns without fire. Do not look down.', 'يحترق الجسر من غير نار. لا تنظر إلى الأسفل.'] },
   '3,5': { n: 'Ember Court', lv: 5, ex: 'w,n', bench: 1, merchant: 1, en: 0 },
-  '3,4': { n: 'Mirror Hall', lv: 5, ex: 's,n', tun: 'v', en: 6, pits: [[514, 140, 124, 160]], lore: ['Every Warden once begged the Core for mercy.', 'كل حارس توسّل النواة يومًا طلبًا للرحمة.'] },
+  '3,4': { n: 'Mirror Hall', lv: 5, ex: 's,n', tun: 'v', en: 6, pits: [[514, 150, 124, 150]], lore: ['Every Warden once begged the Core for mercy.', 'كل حارس توسّل النواة يومًا طلبًا للرحمة.'] },
   '3,3': { n: 'Last Stair', lv: 5, ex: 's,n', en: 6, rain: 1, charm: 'ember' },
   '3,2': { n: 'The Overlord', lv: 29, ex: 's', boss: 1, final: 1, bk: 'boss3', bn: 'The Overlord', bhp: 5200, after: '' }
 };
 /* organic cave rooms: every room gets its own outline, door corridors and rock pillars, generated from the room id */
 const rocks = [], pits = [], fallers = [];
 let safe = { x: 576, y: 390 }, rainT = 2;                                    // circular colliders: cave walls + pillars
-let wallCv = null, curShape = () => true;
+let wallCv = null, curShape = () => true, curOnLane = () => false;
 const hashStr = s => { let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; };
 function seeded(seed) { let a = seed | 0; return () => { a = a + 0x6D2B79F5 | 0; let q = Math.imul(a ^ a >>> 15, 1 | a); q = q + Math.imul(q ^ q >>> 7, 61 | q) ^ q; return ((q ^ q >>> 14) >>> 0) / 4294967296; }; }
 function onFloor(x, y, m) { return curShape(x, y) && !rocks.some(r => Math.hypot(r.x - x, r.y - y) < r.r + m); }
@@ -581,16 +581,18 @@ function buildRoom(id) {
   }
   const pil = [];
   const onLane = (x, y) => lanes.some(d => d === 'n' ? Math.abs(x - W / 2) < 100 && y < 320 : d === 's' ? Math.abs(x - W / 2) < 100 && y > 320 : d === 'w' ? Math.abs(y - 320) < 100 && x < W / 2 : Math.abs(y - 320) < 100 && x > W / 2);
+  curOnLane = onLane;
   if (R.boss) for (let k = 0; k < 6; k++) { const x = W / 2 + Math.cos(k * 1.047) * 190, y = 320 + Math.sin(k * 1.047) * 120; if (!onLane(x, y)) pil.push({ x, y, r: 30 }); }
   else for (let k = 0, tries = 0, np = rnd() * 3 | 0; pil.length < np && tries < 60; tries++) {
     const x = ARENA.l + 120 + rnd() * 780, y = ARENA.t + 90 + rnd() * 350;
-    if (shape(x, y) && Math.abs(x - W / 2) > 110 && Math.abs(y - 320) > 110 && !rocks.some(r => Math.hypot(r.x - x, r.y - y) < 90)) pil.push({ x, y, r: 26 + rnd() * 16 });
+    const pr = 26 + rnd() * 16;
+    if (shape(x, y) && !onLane(x, y) && Math.hypot(x - W / 2, y - 320) > 120 && !rocks.some(r => Math.hypot(r.x - x, r.y - y) < r.r + pr + 48)) pil.push({ x, y, r: pr });
   }
   pits.length = 0; (R.pits || []).forEach(q => pits.push({ x: q[0], y: q[1], w: q[2], h: q[3] }));
   for (let k = 0, tries = 0; k < (R.hz || 0) && tries < 150; tries++) {         // hazard patches in the open floor
     const x = ARENA.l + 80 + rnd() * 820, y = ARENA.t + 60 + rnd() * 380;
     if (shape(x, y) && shape(x + 60, y) && shape(x, y + 60) && shape(x + 60, y + 60) && Math.abs(x - W / 2) > 130 && Math.abs(y - 320) > 100
-      && !rocks.some(r => Math.hypot(r.x - x - 30, r.y - y - 30) < r.r + 50) && !pil.some(r => Math.hypot(r.x - x - 30, r.y - y - 30) < r.r + 60)) { pits.push({ x, y, w: 60, h: 60 }); k++; }
+      && !rocks.some(r => Math.hypot(r.x - x - 30, r.y - y - 30) < r.r + 78) && !pil.some(r => Math.hypot(r.x - x - 30, r.y - y - 30) < r.r + 80)) { pits.push({ x, y, w: 60, h: 60 }); k++; }
   }
   pil.forEach(q => rocks.push(q));
   if (!wallCv) { wallCv = document.createElement('canvas'); wallCv.width = 2048; wallCv.height = 1056; }
@@ -645,7 +647,7 @@ function enterRoom(id) {
   enemies.length = bullets.length = particles.length = bursts.length = eBullets.length = pickups.length = 0;
   bctx.clearRect(ARENA.l, ARENA.t, 1024, 528);
   buildRoom(id); fallers.length = 0; rainT = 2; safe = { x: player.x, y: player.y };
-  if (pits.length && !st.dashHint) { st.dashHint = 1; toast = { text: 'Dash (Shift) leaps across gaps. Start right at the edge!', until: performance.now() + 4000 }; }
+  if (pits.length && !st.dashHint) { st.dashHint = 1; toast = { text: 'Dash (Shift) leaps across gaps. Press it just before the edge', until: performance.now() + 4000 }; }
   if (!R.cr) { genCrates(); R.cr = crates.slice(); }
   crates.length = 0; R.cr.forEach(c => crates.push(c));
   banner = 2.2; bannerText = R.n;
@@ -983,8 +985,9 @@ function updatePlayer(dt) {
   let vx = moving ? jx / len * SPD : 0, vy = moving ? jy / len * SPD : 0;
   player.dashCd = Math.max(0, player.dashCd - dt);
   player.inv = Math.max(0, player.inv - dt);
-  if ((held.has('ShiftLeft') || held.has('ShiftRight') || stick.dash || padDash) && moving && player.dashCd <= 0) {   // dash: short burst, invulnerable
-    player.dashT = story && st.drift ? 0.24 : 0.15; player.dashCd = 1; blip(300, 0.1, 'sawtooth'); if (tutStep === 2) { tutStep = 3; saveMeta(); } player.dx = jx / len; player.dy = jy / len;
+  if (moving) player.ld = { x: jx / len, y: jy / len };
+  if ((held.has('ShiftLeft') || held.has('ShiftRight') || stick.dash || padDash) && player.dashCd <= 0) {   // dash: short burst, invulnerable
+    player.dashT = story && st.drift ? 0.24 : 0.15; player.dashCd = 1; blip(300, 0.1, 'sawtooth'); if (tutStep === 2) { tutStep = 3; saveMeta(); } player.dx = moving ? jx / len : (player.ld ? player.ld.x : 1); player.dy = moving ? jy / len : (player.ld ? player.ld.y : 0);
   }
   if (player.dashT > 0) { player.dashT -= dt; vx = player.dx * 900; vy = player.dy * 900; }
 
