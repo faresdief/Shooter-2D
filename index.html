@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#001219">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #001219; overflow: hidden; overscroll-behavior: none; position: fixed; inset: 0; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #001219; overflow: hidden; overscroll-behavior: none; position: fixed; inset: 0; touch-action: none; -webkit-touch-callout: none; }
   canvas {
     position: absolute; display: block; left: 0; top: 0;
     width: 100vw; height: 56.25vw; max-height: 100vh;     /* first paint only: the script sets the real pixel size */
@@ -122,6 +122,9 @@ function resize() {                                // size the canvas from the r
 }
 ['resize', 'orientationchange', 'fullscreenchange', 'load'].forEach(ev => window.addEventListener(ev, resize));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 resize(); setTimeout(resize, 300); setTimeout(resize, 1200);   // mobile browsers settle their toolbars a moment after load
 
 /* -------------------------------- audio ------------------------------ */
@@ -1506,7 +1509,9 @@ function render() {
   finishUI();
 }
 
+const BUILD = 'build 3 - screen fix';
 function finishUI() {
+  if (screen === 'menu') { ctx.font = '12px ' + UI_FONT; ctx.fillStyle = 'rgba(233,216,166,0.4)'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(BUILD, 14, H - 12); }
   if (toast && performance.now() < toast.until) {
     ctx.font = '600 18px ' + UI_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const w = ctx.measureText(toast.text).width + 48;
@@ -1759,7 +1764,10 @@ try { const dv = JSON.parse(localStorage.getItem('tds_daily') || '{}'); dailyBes
 try { best = +localStorage.getItem('tds_best') || 0; unlocked = Math.max(1, +localStorage.getItem('tds_unlocked') || 1); } catch (_) {}
 try { const m = JSON.parse(localStorage.getItem('tds_meta')); if (m) { wallet = m.wallet | 0; Object.assign(meta, m.meta); Object.assign(ach, m.ach); tutStep = m.tut ? 3 : 0; } } catch (_) {}
 try { const s = JSON.parse(localStorage.getItem('tds_settings')); if (s) { if (s.mode) settings.mode = s.mode; settings.shake = s.shake !== false; settings.diff = s.diff == null ? 1 : s.diff; settings.lang = s.lang || 'en'; settings.look = s.lookv2 || 'classic'; settings.music = s.music == null ? 1 : s.music; muted = !!s.muted; } } catch (_) {}
-if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+  navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(() => {});
+  let reloaded = false; navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
+}
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);                      // schedule first, so one runtime error can never freeze the whole game
