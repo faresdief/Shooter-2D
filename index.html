@@ -152,6 +152,7 @@ function initAudio() {                          // must be called from a user ge
   if (actx.state === 'suspended') actx.resume();
 }
 function play(name) {
+  if (NET.on && NET.host) NET.ev.push(name);
   if (!actx || muted || !buffers[name]) return;
   if (actx.state === 'suspended') actx.resume();
   const src = actx.createBufferSource();
@@ -206,7 +207,7 @@ function startGame(i, keep) {
   }
   player.hp = player.maxHp; screen = 'game'; started = true; setPaused(false);
 }
-function goMenu() { if (story) saveStory(); screen = 'menu'; setPaused(true); }
+function goMenu() { if (story) saveStory(); if (NET.on) leaveOnline(); screen = 'menu'; setPaused(true); }
 function openSettings() { settingsFrom = screen === 'menu' ? 'menu' : 'pause'; screen = 'settings'; }
 
 function setPaused(p) {
@@ -409,7 +410,8 @@ function getPad() {                                  // the gamepad API throws w
   try { return Array.from(navigator.getGamepads()).find(g => g && g.connected) || null; } catch (_) { padOK = false; return null; }
 }
 let noiseBuf = null;
-function wsound(id) {                              // every weapon has its own synthesized sound
+function wsound(id) {
+  if (NET.on && NET.host && id !== 'pistol') NET.ev.push('w:' + id);                              // every weapon has its own synthesized sound
   if (id === 'pistol') return play('laser');
   if (!actx || muted) return;
   const n = actx.currentTime, g = actx.createGain(), o = actx.createOscillator();
@@ -426,6 +428,7 @@ function wsound(id) {                              // every weapon has its own s
 }
 const nova = { cd: 0, fx: [] }, NOVA_BTN = { x: W - 96, y: 440 };
 function useNova() {                               // shockwave: damages and pushes nearby enemies, erases enemy bullets
+  if (NET.client) { NET.nova = true; return; }
   if (nova.cd > 0 || state !== 'play' || (story && !st.nova)) return;
   nova.cd = 12; award('nova'); cam.strength = 18; blip(180, 0.35, 'sawtooth');
   nova.fx.push({ x: player.x, y: player.y, t: 0 });
@@ -648,6 +651,7 @@ function enterRoom(id) {
   const R = ROOMS[id]; st.room = id; st.seen[id] = 1; level = R.lv;
   enemies.length = bullets.length = particles.length = bursts.length = eBullets.length = pickups.length = 0;
   bctx.clearRect(ARENA.l, ARENA.t, 1024, 528);
+  players.forEach(q => { if (q.dead) { q.dead = false; q.hp = Math.max(3, q.hp); q.inv = 2; } });
   buildRoom(id); fallers.length = 0; rainT = 2; safe = { x: player.x, y: player.y };
   if (pits.length && !st.dashHint) { st.dashHint = 1; toast = { text: 'Dash (Shift) leaps across gaps. Press it just before the edge', until: performance.now() + 4000 }; }
   if (!R.cr) { genCrates(); R.cr = crates.slice(); }
@@ -670,10 +674,10 @@ function goRoom(d) {
   ROOMS[st.room].cr = crates.slice();
   const o = OPP[d], p = doorPos(o);
   player.x = p.x + (o === 'w' ? 70 : o === 'e' ? -70 : 0); player.y = p.y + (o === 'n' ? 70 : o === 's' ? -70 : 0); player.inv = 0.6;
-  enterRoom(nid); saveStory();
+  enterRoom(nid); players.forEach(q => { if (q !== P0) { q.x = P0.x + rand(-50, 50); q.y = P0.y + rand(-50, 50); q.inv = 1; } }); saveStory();
 }
 function rest() {                                    // bench: heal, bank your coins, save, and the world stirs again
-  st.bench = st.room; st.carried = 0; player.hp = player.maxHp; restOK = false;
+  st.bench = st.room; st.carried = 0; player.hp = player.maxHp; players.forEach(q => { q.hp = q.maxHp; q.dead = false; }); restOK = false;
   for (const id in ROOMS) if (!ROOMS[id].boss) delete st.cleared[id];
   st.cleared[st.room] = 1;
   toast = { text: 'Rested. Progress saved', until: performance.now() + 2500 }; blip(520, 0.2, 'triangle'); saveMeta(); saveStory();
@@ -682,7 +686,7 @@ function storyDie() {
   if (st.carried > 0) { st.shade = { room: st.room, x: player.x, y: player.y, c: st.carried }; wallet = Math.max(0, wallet - st.carried); }
   st.carried = 0; saveMeta(); cam.strength = 20; blip(90, 0.5, 'sawtooth');
   toast = { text: 'You fell. Your coins wait where you died', until: performance.now() + 3500 };
-  player.hp = player.maxHp; player.inv = 2; player.x = W / 2; player.y = 390; enterRoom(st.bench);
+  player.hp = player.maxHp; player.inv = 2; player.x = W / 2; player.y = 390; players.forEach(q => { q.dead = false; q.hp = q.maxHp; q.inv = 2; q.x = W / 2 + rand(-60, 60); q.y = 390; }); enterRoom(st.bench);
 }
 function storyUpdate(dt) {
   const R = ROOMS[st.room];
@@ -794,7 +798,7 @@ function drawMap() {
   }
 }
 /* ---------------- ONLINE, step 1: direct WebRTC links (up to 4 players), voice chat, ping ---------------- */
-const NET = { id: Math.random().toString(36).slice(2, 8), links: {}, mic: null, muted: false, room: '', host: false, status: 'Not connected', es: null, an: null, level: 0, hello: false, topic: '' };
+const NET = { id: Math.random().toString(36).slice(2, 8), links: {}, mic: null, muted: false, room: '', host: false, status: 'Not connected', es: null, an: null, level: 0, hello: false, topic: '', on: false, client: false, me: 0, ev: [], nova: false, last: 0, room_: '' };
 const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 function waitIce(pc) {
   return new Promise(res => {
@@ -821,6 +825,11 @@ function onNet(link, raw) {                          // game messages will join 
   let m; try { m = JSON.parse(raw); } catch (_) { return; }
   if (m.t === 'ping') { if (link.open) link.dc.send(JSON.stringify({ t: 'pong', ts: m.ts })); }
   else if (m.t === 'pong') link.ping = Math.round(performance.now() - m.ts);
+  else if (m.t === 'in') { if (link.player) link.player.in = Object.assign(link.player.in || {}, m.i, { n: (link.player.in && link.player.in.n) || m.i.n }); }
+  else if (m.t === 'st') applySnap(m);
+  else if (m.t === 'go') {                           // the host started a game: switch to guest mode
+    NET.on = true; NET.client = true; NET.me = m.me; players.length = 1; story = m.mode === 'story'; tutStep = 3; screen = 'game'; started = true; setPaused(false);
+  }
 }
 setInterval(() => { for (const k in NET.links) { const l = NET.links[k]; if (l.open) try { l.dc.send(JSON.stringify({ t: 'ping', ts: performance.now() })); } catch (_) {} } }, 1000);
 const slim = d => ({ type: d.type, sdp: d.sdp.split('\r\n').filter(l => !(l.indexOf('a=candidate') === 0 && / tcp /i.test(l))).join('\r\n') });
@@ -837,7 +846,7 @@ async function sig(m) {                              // signaling over a free pu
 }
 function closeNet() {
   if (NET.es) NET.es.close();
-  NET.es = null; NET.hello = false; NET.room = ''; NET.status = 'Not connected';
+  NET.es = null; NET.hello = false; NET.room = ''; NET.status = 'Not connected'; NET.on = false; NET.client = false; players.length = 1; player = P0;
   for (const k in NET.links) { try { NET.links[k].pc.close(); } catch (_) {} delete NET.links[k]; }
 }
 function joinRoom(code, host) {
@@ -851,11 +860,11 @@ async function manualOffer() { const l = makeLink('manual', true); await l.pc.se
 async function manualAnswer(code) { const l = makeLink('manual', false); await l.pc.setRemoteDescription(JSON.parse(atob(code.trim()))); adoptAudio(l); await l.pc.setLocalDescription(await l.pc.createAnswer()); await waitIce(l.pc); return btoa(JSON.stringify(l.pc.localDescription)); }
 async function manualFinish(code) { await NET.links.manual.pc.setRemoteDescription(JSON.parse(atob(code.trim()))); }
 function showCode(title, code) { try { navigator.clipboard.writeText(code); } catch (_) {} window.prompt(title + ' (already copied)', code); }
-async function makeCode() { NET.status = 'Making code...'; try { showCode('Send this code to your friend', await manualOffer()); NET.status = 'Waiting for the reply code. Then press Paste code'; } catch (e) { NET.status = 'Could not make a code'; } }
+async function makeCode() { NET.status = 'Making code...'; NET.host = true; try { showCode('Send this code to your friend', await manualOffer()); NET.status = 'Waiting for the reply code. Then press Paste code'; } catch (e) { NET.status = 'Could not make a code'; } }
 async function pasteCode() {
   const s = window.prompt('Paste the code you received'); if (!s) return;
   try {
-    if (JSON.parse(atob(s.trim())).type === 'offer') { NET.status = 'Making reply code...'; showCode('Send this reply code back', await manualAnswer(s)); NET.status = 'Waiting for your friend to finish'; }
+    if (JSON.parse(atob(s.trim())).type === 'offer') { NET.status = 'Making reply code...'; NET.host = false; showCode('Send this reply code back', await manualAnswer(s)); NET.status = 'Waiting for your friend to finish'; }
     else { await manualFinish(s); NET.status = 'Connecting...'; }
   } catch (e) { NET.status = 'That code did not work'; }
 }
@@ -878,7 +887,7 @@ function drawOnline() {
   button(NET.muted ? 'Unmute' : 'Mute', W / 2 + 130, 210, 240, 46, toggleMute, NET.muted ? 'primary' : '');
   button('Make code', W / 2 - 130, 266, 240, 46, makeCode);
   button('Paste code', W / 2 + 130, 266, 240, 46, pasteCode);
-  rr(W / 2 - 360, 318, 720, 232, 18); ctx.fillStyle = 'rgba(0,31,44,0.9)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,147,148,0.5)'; ctx.stroke();
+  rr(W / 2 - 360, 318, 720, 202, 18); ctx.fillStyle = 'rgba(0,31,44,0.9)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,147,148,0.5)'; ctx.stroke();
   ctx.textAlign = 'left'; ctx.fillStyle = COLOR.gun; ctx.font = '600 17px ' + UI_FONT; ctx.fillText('Players (' + (1 + Object.keys(NET.links).length) + '/4)', W / 2 - 336, 350);
   if (NET.an) { const b = new Uint8Array(NET.an.fftSize); NET.an.getByteTimeDomainData(b); let s = 0; for (const v of b) s += (v - 128) ** 2; NET.level = Math.min(1, Math.sqrt(s / b.length) / 30); }
   ctx.fillStyle = 'rgba(148,210,189,0.2)'; ctx.fillRect(W / 2 + 130, 340, 200, 8); ctx.fillStyle = NET.muted ? '#9b2226' : '#94d2bd'; ctx.fillRect(W / 2 + 130, 340, 200 * NET.level, 8);
@@ -888,7 +897,81 @@ function drawOnline() {
     ctx.fillText(l.id + '    ' + (l.open ? 'connected' : l.state) + '    ' + (l.ping >= 0 ? l.ping + ' ms' : '...') + '    voice: ' + (l.audio ? 'ready' : '-'), W / 2 - 336, 424 + i * 34);
   });
   ctx.textAlign = 'center';
+  if (NET.host && Object.values(NET.links).some(l => l.open)) { button('Start Arcade', W / 2 - 150, 548, 280, 44, () => startOnline('arcade'), 'primary'); button('Start Story', W / 2 + 150, 548, 280, 44, () => startOnline('story'), 'primary'); }
+  else if (!NET.host && Object.values(NET.links).some(l => l.open)) { ctx.fillStyle = COLOR.gun; ctx.font = '18px ' + UI_FONT; ctx.fillText('Connected. Waiting for the host to start the game...', W / 2, 568); }
   button('Disconnect and back', W / 2, 604, 300, 46, () => { closeNet(); screen = 'menu'; });
+}
+function asPlayer(p, input, fn) {                    // run the single-player code for another player by swapping the globals it reads
+  const sp = player, sm = settings.mode, ks = [...held], sx = pointer.sx, sy = pointer.sy, sd = pointer.down, mv = stick.move, ai = stick.aim, fi = stick.fire, da = stick.dash, po = padOK;
+  player = p; settings.mode = 'pc'; padOK = false; held.clear();
+  if (input.l) held.add('KeyA'); if (input.r) held.add('KeyD'); if (input.u) held.add('KeyW'); if (input.d) held.add('KeyS'); if (input.s) held.add('ShiftLeft');
+  const a = input.a || 0; pointer.sx = p.x + Math.cos(a) * 200 - cam.x; pointer.sy = p.y + Math.sin(a) * 200 - cam.y; pointer.down = !!input.f;
+  stick.move = stick.aim = null; stick.fire = stick.dash = false;
+  try { fn(); } finally { player = sp; settings.mode = sm; padOK = po; held.clear(); ks.forEach(k => held.add(k)); pointer.sx = sx; pointer.sy = sy; pointer.down = sd; stick.move = mv; stick.aim = ai; stick.fire = fi; stick.dash = da; }
+}
+function nearestAlive(e) {
+  let b = null, d = 1e9;
+  for (const p of players) if (!p.dead) { const q = Math.hypot(p.x - e.x, p.y - e.y); if (q < d) { d = q; b = p; } }
+  return b || P0;
+}
+function startOnline(mode) {
+  const ls = Object.values(NET.links).filter(l => l.open);
+  if (!ls.length) { NET.status = 'Nobody is connected yet'; return; }
+  players.length = 1; NET.on = true; NET.client = false;
+  if (mode === 'story') startStory(!hasStory()); else startGame(0);
+  ls.forEach((l, i) => { const p = mkPlayer(); p.sk = (meta.skin + i + 1) % SKINS.length; p.x = W / 2 + 50 * (i + 1); l.player = p; l.me = i + 1; players.push(p); });
+  ls.forEach(l => { try { l.dc.send(JSON.stringify({ t: 'go', mode, me: l.me })); } catch (_) {} });
+}
+function leaveOnline(msg) { closeNet(); screen = 'menu'; setPaused(true); if (msg) toast = { text: msg, until: performance.now() + 3500 }; }
+function snap() {
+  return { t: 'st', s: state, sc: score, w: wave, lv: level, st: story ? st.room : '', bn: bannerText, ba: banner, fl: flash, cs: cam.strength, co: combo, wl: wallet, wp: weapon.id, nc: nova.cd,
+    cr: crates.map(k => [k.x | 0, k.y | 0, k.hw, k.hh, k.bar ? 1 : 0]),
+    pl: players.map((p, i) => [p.x | 0, p.y | 0, +p.aim.toFixed(2), p.hp, p.maxHp, +p.sx.toFixed(2), +p.sy.toFixed(2), p.inv > 0 ? 1 : 0, p.dead ? 1 : 0, +p.rotScale.toFixed(2), p.dashCd, i === 0 ? meta.skin : p.sk]),
+    en: enemies.map(e => [e.x | 0, e.y | 0, e.type, e.sc, e.col, +e.hitT.toFixed(2), +e.wind.toFixed(2), e.dying ? 1 : 0, +e.dieT.toFixed(2), e.text, e.health, e.max, e.elite ? 1 : 0, +e.animT.toFixed(2)]),
+    bu: bullets.map(b => [b.x | 0, b.y | 0, +b.rot.toFixed(2), b.col, b.shape, b.hl, b.hw]), eb: eBullets.map(b => [b.x | 0, b.y | 0]),
+    pk: pickups.map(k => [k.x | 0, k.y | 0, +k.t.toFixed(1), k.c || 0, k.w || '', k.shade ? 1 : 0]), nv: nova.fx.map(f => [f.x | 0, f.y | 0, +f.t.toFixed(2), f.r || 0]),
+    fx: fxs.map(f => [f.x | 0, f.y | 0, +f.t.toFixed(2), f.r || 0]), fa: fallers.map(f => [f.x | 0, f.y | 0, +f.t.toFixed(2)]), ev: NET.ev.splice(0) };
+}
+function applySnap(m) {
+  if (!NET.client) return;
+  state = m.s; score = m.sc; wave = m.w; level = m.lv; combo = m.co; wallet = m.wl; flash = m.fl; weapon.id = m.wp; nova.cd = m.nc;
+  cam.strength = Math.max(cam.strength, m.cs); if (m.ba > 0) { banner = m.ba; bannerText = m.bn; }
+  if (m.st) { story = true; st.room = m.st; st.seen[m.st] = 1; if (NET.room_ !== m.st) { NET.room_ = m.st; buildRoom(m.st); } } else { story = false; NET.room_ = ''; rocks.length = 0; pits.length = 0; }
+  crates.length = 0; m.cr.forEach(k => crates.push({ x: k[0], y: k[1], hw: k[2], hh: k[3], bar: k[4] ? true : undefined }));
+  while (players.length < m.pl.length) players.push(mkPlayer());
+  players.length = m.pl.length;
+  m.pl.forEach((a, i) => { Object.assign(players[i], { x: a[0], y: a[1], aim: a[2], hp: a[3], maxHp: a[4], sx: a[5], sy: a[6], inv: a[7] ? 1 : 0, dead: !!a[8], rotScale: a[9], dashCd: a[10], sk: a[11] }); });
+  player = players[NET.me] || players[0];
+  enemies.length = 0; m.en.forEach(a => enemies.push({ x: a[0], y: a[1], type: a[2], sc: a[3], col: a[4], hitT: a[5], wind: a[6], dying: !!a[7], dieT: a[8], text: a[9], health: a[10], max: a[11], elite: !!a[12], animT: a[13], hw: 16 * a[3], hh: 24 * a[3] }));
+  bullets.length = 0; m.bu.forEach(a => bullets.push({ x: a[0], y: a[1], rot: a[2], col: a[3], shape: a[4], hl: a[5], hw: a[6] }));
+  eBullets.length = 0; m.eb.forEach(a => eBullets.push({ x: a[0], y: a[1] }));
+  pickups.length = 0; m.pk.forEach(a => pickups.push({ x: a[0], y: a[1], t: a[2], c: a[3] || undefined, w: a[4] || undefined, shade: !!a[5] }));
+  nova.fx.length = 0; m.nv.forEach(a => nova.fx.push({ x: a[0], y: a[1], t: a[2], r: a[3] || undefined }));
+  fxs.length = 0; m.fx.forEach(a => fxs.push({ x: a[0], y: a[1], t: a[2], r: a[3] || undefined }));
+  fallers.length = 0; m.fa.forEach(a => fallers.push({ x: a[0], y: a[1], t: a[2] }));
+  m.ev.forEach(n => { if (n.indexOf('w:') === 0) wsound(n.slice(2)); else play(n); });
+}
+function readInput() {                               // what a guest sends to the host
+  const k = c => held.has(c);
+  let l = k('KeyA') || k('ArrowLeft'), r = k('KeyD') || k('ArrowRight'), u = k('KeyW') || k('ArrowUp'), d = k('KeyS') || k('ArrowDown'), a = player.aim;
+  if (stick.move) { l = stick.move.x < -0.35; r = stick.move.x > 0.35; u = stick.move.y < -0.35; d = stick.move.y > 0.35; }
+  if (settings.mode === 'phone') { if (stick.aim) a = Math.atan2(stick.aim.y, stick.aim.x); } else a = Math.atan2(pointer.sy + cam.y - player.y, pointer.sx + cam.x - player.x);
+  const o = { l, r, u, d, a: +a.toFixed(3), f: !!(pointer.down || stick.fire), s: !!(k('ShiftLeft') || k('ShiftRight') || stick.dash), n: NET.nova };
+  NET.nova = false; return o;
+}
+function netTick() {                                 // 30 times a second: host sends the world, guests send their inputs
+  const now = performance.now(); if (now - NET.last < 33) return; NET.last = now;
+  const ls = Object.values(NET.links);
+  if (NET.client) { const l = ls.find(x => x.open); if (!l) return leaveOnline('The host disconnected'); try { l.dc.send(JSON.stringify({ t: 'in', i: readInput() })); } catch (_) {} return; }
+  for (let i = players.length - 1; i >= 1; i--) { const l = ls.find(x => x.player === players[i]); if (l && !l.open) players.splice(i, 1); }
+  const s = JSON.stringify(snap());
+  for (const l of ls) if (l.open && l.player) try { l.dc.send(s); } catch (_) {}
+}
+function clientUpdate(dt) { updateParticles(dt); updateCamera(dt); }
+function drawWait() {
+  ctx.fillStyle = 'rgba(0,18,25,0.78)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = COLOR.ground; ctx.font = '600 30px ' + UI_FONT; ctx.fillText('The host is choosing...', W / 2, 300);
+  ctx.fillStyle = COLOR.gun; ctx.font = '18px ' + UI_FONT; ctx.fillText(state === 'upgrade' ? 'Picking an upgrade' : state === 'over' ? 'Game over' : 'Please wait', W / 2, 345);
 }
 function share() {
   const txt = 'I reached level ' + (level + 1) + ' with ' + score + ' points in Top Down Shooter!';
@@ -917,7 +1000,8 @@ function shootE(x, y, a, s) { eBullets.push({ x, y, vx: Math.cos(a) * s, vy: Mat
 function updateEBullets(dt) {
   for (let i = eBullets.length - 1; i >= 0; i--) {
     const b = eBullets[i]; b.t += dt; b.x += b.vx * dt; b.y += b.vy * dt;
-    if (Math.hypot(b.x - player.x, b.y - player.y) < 24) { hurtPlayer(); eBullets.splice(i, 1); }
+    const hp_ = players.find(q => !q.dead && Math.hypot(b.x - q.x, b.y - q.y) < 24);
+    if (hp_) { const s0 = player; player = hp_; hurtPlayer(); player = s0; eBullets.splice(i, 1); }
     else if (b.t > 7 || rocks.some(k => (b.x - k.x) ** 2 + (b.y - k.y) ** 2 < k.r * k.r) || crates.some(c => Math.abs(b.x - c.x) < c.hw && Math.abs(b.y - c.y) < c.hh) || b.x < ARENA.l || b.x > ARENA.r || b.y < ARENA.t || b.y > ARENA.b) eBullets.splice(i, 1);
   }
 }
@@ -1024,7 +1108,7 @@ let state = 'play', wave = 0, score = 0, best = 0, combo = 0, comboT = 0, waveT 
 function reset() {
   enemies.length = 0; bullets.length = 0; particles.length = 0; bursts.length = 0;
   Object.assign(player, { x: W / 2, y: H / 2, hp: MAX_HP + meta.hp, maxHp: MAX_HP + meta.hp, inv: 0, dashT: 0, dashCd: 0, pushT: 0, cooldown: 0 });
-  Object.keys(perks).forEach(k => { perks[k] = 0; }); pickups.length = 0; eBullets.length = 0; offered = false; weapon.id = meta.eq; weapon.t = 0; nova.cd = 0; nova.fx.length = 0; fxs.length = 0; stats.kills = 0; stats.time = 0; rocks.length = 0; genCrates(); bctx.clearRect(ARENA.l, ARENA.t, 1024, 528);
+  Object.keys(perks).forEach(k => { perks[k] = 0; }); pickups.length = 0; eBullets.length = 0; offered = false; weapon.id = meta.eq; weapon.t = 0; nova.cd = 0; nova.fx.length = 0; fxs.length = 0; stats.kills = 0; stats.time = 0; rocks.length = 0; players.forEach(q => { if (q !== P0) { q.dead = false; q.maxHp = q.hp = P0.maxHp; q.inv = 1; q.x = W / 2 + rand(-70, 70); q.y = H / 2 + 70; } }); genCrates(); bctx.clearRect(ARENA.l, ARENA.t, 1024, 528);
   wave = 0; score = 0; combo = 0; waveT = 0.8; flash = 0; state = 'play';
 }
 function hurtPlayer() {
@@ -1034,6 +1118,11 @@ function hurtPlayer() {
   for (let k = 0; k < 3; k++) { const rt = Math.random() * 6.28; addBurst(PFX.blood, () => ({ x: player.x, y: player.y, rot: rt })); }
   if (navigator.vibrate) navigator.vibrate(40);
   if (player.hp <= 0) {
+    if (players.length > 1) {                          // co-op: a fallen player waits for the next wave/room; everyone down = defeat
+      player.dead = true; player.hp = 0;
+      if (!players.every(q => q.dead)) { toast = { text: 'A player is down. They return next wave', until: performance.now() + 2500 }; return; }
+      player = P0;
+    }
     if (story) { storyDie(); return; }
     state = 'over'; overT = 0; pointer.down = false; saveMeta(); saveDaily();
     if (score > best) { best = score; try { localStorage.setItem('tds_best', String(best)); } catch (_) {} }
@@ -1042,12 +1131,14 @@ function hurtPlayer() {
 function onKill() { stats.kills++; misAdd('kill', 1); combo++; if (combo >= 5) award('combo5'); comboT = 2.5; score += 10 * combo; freeze = 0.05; }   // hit-stop on every kill
 
 const PLAYER_HALF_W = 24, PLAYER_HALF_H = 32;
-const player = {
+let player = {
   x: W / 2, y: H / 2, lr: true, aim: 0,
   sx: 1, sy: 1, anim: 'idle', animT: 0,
   cooldown: 0, shotT: 1, rotScale: 1, hp: MAX_HP, maxHp: MAX_HP, inv: 0, dashT: 0, dashCd: 0, dx: 0, dy: 0,
   pushDx: 0, pushDy: 0, pushStr: 0, pushT: 0, trailAcc: 0
 };
+const players = [player], P0 = player;
+const mkPlayer = () => ({ x: W / 2, y: H / 2 + 60, lr: true, aim: 0, sx: 1, sy: 1, anim: 'idle', animT: 0, cooldown: 0, shotT: 1, rotScale: 1, hp: P0.maxHp, maxHp: P0.maxHp, inv: 1, dashT: 0, dashCd: 0, dx: 0, dy: 0, pushDx: 0, pushDy: 0, pushStr: 0, pushT: 0, trailAcc: 0, dead: false });
 const bullets = [];
 
 function shoot() {
@@ -1149,6 +1240,7 @@ const HIT_LEN = 0.2, DEATH_DELAY = 0.2, DEATH_LEN = 0.2;
 
 function spawnWave() {
   wave++; banner = 2; offered = false;
+  players.forEach(q => { if (q.dead) { q.dead = false; q.hp = Math.max(3, q.hp); q.inv = 2; } });
   const isMega = level % 10 === 9 && wave === LEVELS[level % 30].waves, tier = Math.floor(level / 10);
   bannerText = isMega ? 'Boss: ' + ['The Colossus', 'The Warden', 'The Overlord'][tier % 3] : wave === 1 ? 'Level ' + (level + 1) + ': ' + LEVELS[level % 30].name : 'Wave ' + wave;
   if (isMega) cam.strength = 25;
@@ -1179,7 +1271,7 @@ function hitEnemy(e, bullet) {
 
 function updateEnemies(dt) {
   for (let i = enemies.length - 1; i >= 0; i--) {
-    const e = enemies[i];
+    const e = enemies[i]; player = nearestAlive(e);       // every enemy chases and hits its nearest player
     if (e.hitT < HIT_LEN) e.hitT += dt;
     if (e.dying) {                                // frozen, can't be hit again, vanishes after hit flash + death flicker
       e.dieT += dt;
@@ -1217,6 +1309,7 @@ function updateEnemies(dt) {
       e.pushT -= d;
     }
   }
+  player = P0;
   // keep enemies from stacking on each other or on the player (they were able to merge into one blob)
   for (let i = 0; i < enemies.length; i++) {
     const a = enemies[i];
@@ -1298,10 +1391,11 @@ function update(dt) {
   comboT -= dt; if (comboT <= 0) combo = 0;
   if (state !== 'play') { overT += dt; updateParticles(dt); updateCamera(dt); return; }
   if (freeze > 0) { freeze -= dt; updateCamera(dt); return; }
-  updatePlayer(dt);
+  if (!P0.dead) updatePlayer(dt);
+  for (const p of players) if (p !== P0 && !p.dead) asPlayer(p, p.in || {}, () => { if (p.in && p.in.n) { p.in.n = false; useNova(); } updatePlayer(dt); });
   updateEnemies(dt);
   updateBullets(dt);
-  updatePickups(dt);
+  for (const p of players) if (!p.dead) { const s0 = player; player = p; updatePickups(dt); player = s0; }
   updateEBullets(dt);
   updateParticles(dt);
   if (story) storyUpdate(dt);
@@ -1324,11 +1418,7 @@ function poly(points) {
 
 function drawShadows() {
   ctx.fillStyle = COLOR.shadow;
-  ctx.save();
-  ctx.translate(player.x, player.y);
-  ctx.scale(player.sx, player.sy);
-  poly([[24, 21], [27, 29], [24, 37], [-19, 37], [-19, 21]]);
-  ctx.restore();
+  for (const p of players) { if (p.dead) continue; ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.sx, p.sy); poly([[24, 21], [27, 29], [24, 37], [-19, 37], [-19, 21]]); ctx.restore(); }
   for (const e of enemies) ctx.fillRect(e.x - 18 * e.sc, e.y + 17 * e.sc, 36 * e.sc, 11 * e.sc);
 }
 
@@ -1380,7 +1470,7 @@ function drawPlayer() {
   ctx.translate(player.x, player.y);
   ctx.save();
   ctx.scale(player.sx, player.sy);
-  const sk = SKINS[meta.skin].c;
+  const sk = SKINS[player.sk !== undefined ? player.sk : meta.skin].c;
   if (hk()) {
     ctx.fillStyle = '#0b1419'; ctx.strokeStyle = sk; ctx.lineWidth = 3; ctx.shadowColor = sk; ctx.shadowBlur = 14;
     ctx.beginPath(); ctx.moveTo(-16, -32); ctx.lineTo(-16, 32); ctx.lineTo(24, 32); ctx.lineTo(16, 0); ctx.lineTo(8, -32); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -1480,7 +1570,7 @@ function render() {
     ctx.fillStyle = '#fff'; ctx.fillRect(k.x - 1.5, k.y - 6 + bob, 3, 12); ctx.fillRect(k.x - 6, k.y - 1.5 + bob, 12, 3);
   }
   drawParticles(true);
-  drawPlayer();
+  for (const p of players) { if (p.dead) continue; const s0 = player; player = p; drawPlayer(); player = s0; }
   drawBullets();
   drawParticles(false);
   for (const f of nova.fx) { const k = f.t / 0.45; ctx.strokeStyle = 'rgba(238,155,0,' + (1 - k) + ')'; ctx.lineWidth = 8 * (1 - k) + 2; ctx.beginPath(); ctx.arc(f.x, f.y, (f.r || 230) * k, 0, 7); ctx.stroke(); }
@@ -1503,7 +1593,7 @@ function render() {
   if (player.hp === 1 && state === 'play') { ctx.fillStyle = 'rgba(155,34,38,' + (0.1 + 0.08 * Math.sin(performance.now() / 180)) + ')'; ctx.fillRect(0, 0, W, H); }
   if (flash > 0) { ctx.fillStyle = 'rgba(155,34,38,' + flash * 0.6 + ')'; ctx.fillRect(0, 0, W, H); }
   drawHUD(); drawTut(); if (story) drawStoryHud();
-  if (state === 'over') drawGameOver(); else if (state === 'clear') drawClear(); else if (state === 'upgrade') drawUpgrade(); else if (state === 'sclear') drawStoryClear(); else if (state === 'ending') drawEnding();
+  if (NET.client && state !== 'play') drawWait(); else if (state === 'over') drawGameOver(); else if (state === 'clear') drawClear(); else if (state === 'upgrade') drawUpgrade(); else if (state === 'sclear') drawStoryClear(); else if (state === 'ending') drawEnding();
   if (screen === 'settings') drawSettings(); else if (paused) drawPause();
   drawTouchUI();
   finishUI();
@@ -1773,7 +1863,8 @@ function frame(now) {
   requestAnimationFrame(frame);                      // schedule first, so one runtime error can never freeze the whole game
   const dt = clamp((now - last) / 1000, 0, 0.05);   // clamp so a lag spike or tab switch can't teleport things
   last = now;
-  if (!paused) update(dt);
+  if (NET.client) clientUpdate(dt); else if (!paused) update(dt);
+  if (NET.on) netTick();
   music();
   render();
 }
