@@ -14,10 +14,14 @@
     width: 100vw; height: 56.25vw; max-height: 100vh;     /* first paint only: the script sets the real pixel size */
     cursor: crosshair; touch-action: none; -webkit-user-select: none; user-select: none;
   }
+  #rot { display: none; position: fixed; inset: 0; z-index: 10; background: #001219; color: #e9d8a6; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; font: 600 22px system-ui, sans-serif; padding: 24px; }
+  #rot button { font: 600 18px system-ui; padding: 12px 22px; border-radius: 14px; border: 2px solid #0a9396; background: #ca6702; color: #001219; }
+  @media (orientation: portrait) and (pointer: coarse) { #rot { display: flex; } canvas { visibility: hidden; } }
 </style>
 </head>
 <body>
 <canvas id="game" width="1152" height="648"></canvas>
+<div id="rot"><div style="font-size:60px">&#8635;</div><div>Rotate your phone sideways</div><div dir="rtl">لف الموبايل بالعرض عشان تلعب</div><button id="rotfs">Fullscreen</button></div>
 
 <script>
 (() => {
@@ -108,7 +112,8 @@ function tx(s) {
 const _ft = ctx.fillText.bind(ctx), _mt = ctx.measureText.bind(ctx);
 ctx.fillText = (s, x, y) => _ft(tx(s), x, y);
 ctx.measureText = s => _mt(tx(s));
-let pxScale = 1;
+let pxScale = 1, Z = 1, zcx = W / 2, zcy = H / 2;
+const scrX = x => (x - zcx - cam.x) * Z + W / 2, scrY = y => (y - zcy - cam.y) * Z + H / 2;
 function resize() {                                // size the canvas from the real visible area, centred, keeping 16:9
   const vv = window.visualViewport;
   const vw = Math.floor(vv ? vv.width : window.innerWidth), vh = Math.floor(vv ? vv.height : window.innerHeight);
@@ -125,7 +130,14 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', resi
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('dblclick', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
-resize(); setTimeout(resize, 300); setTimeout(resize, 1200);   // mobile browsers settle their toolbars a moment after load
+resize(); setTimeout(resize, 300); setTimeout(resize, 1200);
+function goFull() {                                  // fullscreen + landscape lock (needs a tap; iPhone Safari only allows it for installed web apps)
+  const d = document.documentElement;
+  try { (d.requestFullscreen ? d.requestFullscreen() : Promise.reject()).then(() => { const o = window.screen.orientation; if (o && o.lock) o.lock('landscape').catch(() => {}); }).catch(() => {}); } catch (_) {}
+}
+document.getElementById('rotfs').onclick = goFull;
+const portraitMQ = window.matchMedia('(orientation: portrait) and (pointer: coarse)');
+if (portraitMQ.addEventListener) portraitMQ.addEventListener('change', e => { if (e.matches && screen === 'game' && !NET.on) setPaused(true); resize(); });   // mobile browsers settle their toolbars a moment after load
 
 /* -------------------------------- audio ------------------------------ */
 const AudioCtor = window.AudioContext || window.webkitAudioContext;
@@ -167,11 +179,11 @@ const held = new Set();                         // event.code => layout independ
 const pointer = { sx: W / 2 + 200, sy: H / 2, down: false };
 let paused = true, started = false, screen = 'menu', settingsFrom = 'menu', ui = [], hotAny = false;
 const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
-const settings = { mode: coarse ? 'phone' : 'pc', shake: true, diff: 1, lang: 'en', music: 1, look: 'classic' };
+const settings = { mode: coarse ? 'phone' : 'pc', shake: true, diff: 1, lang: 'en', music: 1, look: 'classic', zoom: true };
 const touches = new Map();
 const stick = { move: null, aim: null, fire: false, dash: false };
 const STICK_R = 70, DASH_BTN = { x: W - 96, y: 330, r: 46 };
-function saveSettings() { try { localStorage.setItem('tds_settings', JSON.stringify({ mode: settings.mode, shake: settings.shake, diff: settings.diff, lang: settings.lang, music: settings.music, lookv2: settings.look, muted })); } catch (_) {} }
+function saveSettings() { try { localStorage.setItem('tds_settings', JSON.stringify({ mode: settings.mode, shake: settings.shake, diff: settings.diff, lang: settings.lang, music: settings.music, lookv2: settings.look, zoom: settings.zoom, muted })); } catch (_) {} }
 function toLogical(e) { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
 function touchDown(e) {
   const p = toLogical(e);
@@ -241,6 +253,7 @@ canvas.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   updatePointer(e);
   initAudio();
+  if (coarse && !document.fullscreenElement) goFull();
   if (!(screen === 'game' && !paused && state === 'play')) {
     const b = ui.find(u => pointer.sx >= u.x && pointer.sx <= u.x + u.w && pointer.sy >= u.y && pointer.sy <= u.y + u.h);
     if (b) { blip(520, 0.06); b.fn(); }
@@ -388,10 +401,10 @@ function light(x, y, r) { const g = lc.createRadialGradient(x, y, 0, x, y, r); g
 function drawNight() {                              // levels x8-x0 are dark: only you, bullets and pickups give light
   lc.globalCompositeOperation = 'source-over'; lc.fillStyle = 'rgba(0,8,16,0.82)'; lc.fillRect(0, 0, W, H);
   lc.globalCompositeOperation = 'destination-out';
-  light(player.x - cam.x, player.y - cam.y, 300);
-  for (const b of bullets) light(b.x - cam.x, b.y - cam.y, 90);
-  for (const b of eBullets) light(b.x - cam.x, b.y - cam.y, 60);
-  for (const k of pickups) light(k.x - cam.x, k.y - cam.y, 60);
+  light(scrX(player.x), scrY(player.y), 300 * Z);
+  for (const b of bullets) light(scrX(b.x), scrY(b.y), 90 * Z);
+  for (const b of eBullets) light(scrX(b.x), scrY(b.y), 60 * Z);
+  for (const k of pickups) light(scrX(k.x), scrY(k.y), 60 * Z);
   ctx.drawImage(lightCv, 0, 0, W, H);
 }
 let daily = false, dailyBest = 0, rngS = 1;
@@ -518,11 +531,11 @@ function drawAtmos() {                               // Hollow: fog, shafts, mot
   }
   if (screen === 'game') {
     if (H_) {
-      const px = player.x - cam.x, py = player.y - cam.y, g = ctx.createRadialGradient(px, py, 0, px, py, 240);
+      const px = scrX(player.x), py = scrY(player.y), g = ctx.createRadialGradient(px, py, 0, px, py, 240 * Z);
       g.addColorStop(0, 'rgba(150,215,230,0.16)'); g.addColorStop(1, 'rgba(150,215,230,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     }
     for (const f of fxs) {
-      const k = f.t / 0.16, r = (f.r || 40) * (0.6 + k), x = f.x - cam.x, y = f.y - cam.y, q = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const k = f.t / 0.16, r = (f.r || 40) * (0.6 + k) * Z, x = scrX(f.x), y = scrY(f.y), q = ctx.createRadialGradient(x, y, 0, x, y, r);
       q.addColorStop(0, 'rgba(255,255,255,' + (H_ ? 0.9 : 0.75) * (1 - k) + ')'); q.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = q; ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
   }
@@ -674,7 +687,7 @@ function goRoom(d) {
   ROOMS[st.room].cr = crates.slice();
   const o = OPP[d], p = doorPos(o);
   player.x = p.x + (o === 'w' ? 70 : o === 'e' ? -70 : 0); player.y = p.y + (o === 'n' ? 70 : o === 's' ? -70 : 0); player.inv = 0.6;
-  enterRoom(nid); players.forEach(q => { if (q !== P0) { q.x = P0.x + rand(-50, 50); q.y = P0.y + rand(-50, 50); q.inv = 1; } }); saveStory();
+  enterRoom(nid); players.forEach(q => { if (q !== player) { q.x = player.x + rand(-50, 50); q.y = player.y + rand(-50, 50); q.inv = 1; q.safe = { x: q.x, y: q.y }; } }); saveStory();
 }
 function rest() {                                    // bench: heal, bank your coins, save, and the world stirs again
   st.bench = st.room; st.carried = 0; player.hp = player.maxHp; players.forEach(q => { q.hp = q.maxHp; q.dead = false; }); restOK = false;
@@ -688,7 +701,16 @@ function storyDie() {
   toast = { text: 'You fell. Your coins wait where you died', until: performance.now() + 3500 };
   player.hp = player.maxHp; player.inv = 2; player.x = W / 2; player.y = 390; players.forEach(q => { q.dead = false; q.hp = q.maxHp; q.inv = 2; q.x = W / 2 + rand(-60, 60); q.y = 390; }); enterRoom(st.bench);
 }
-function storyUpdate(dt) {
+function storyUpdate(dt) {                          // run the room logic for each living player; whoever reaches a door moves the whole party
+  let first = true;
+  for (const p of players.slice()) {
+    if (p.dead) continue;
+    const s0 = player, r0 = st.room; player = p; safe = p.safe || (p.safe = { x: p.x, y: p.y });
+    storyOne(first ? dt : 0); first = false; p.safe = safe; player = s0;
+    if (st.room !== r0 || state !== 'play') break;
+  }
+}
+function storyOne(dt) {
   const R = ROOMS[st.room];
   const inP = q => player.x > q.x - 4 && player.x < q.x + q.w + 4 && player.y > q.y - 4 && player.y < q.y + q.h + 4;
   if (player.dashT <= 0 && pits.some(inP)) {                 // you fell: lose a heart and climb back to the last safe spot
@@ -701,7 +723,7 @@ function storyUpdate(dt) {
   }
   for (let i = fallers.length - 1; i >= 0; i--) {
     const f = fallers[i]; f.t += dt;
-    if (f.t >= 1) { fallers.splice(i, 1); cam.strength = 12; blip(110, 0.2, 'square'); fxs.push({ x: f.x, y: f.y, t: 0, r: 60 }); if (Math.hypot(f.x - player.x, f.y - player.y) < 52) hurtPlayer(); }
+    if (f.t >= 1) { fallers.splice(i, 1); cam.strength = 12; blip(110, 0.2, 'square'); fxs.push({ x: f.x, y: f.y, t: 0, r: 60 }); for (const q of players) if (!q.dead && Math.hypot(f.x - q.x, f.y - q.y) < 52) { const s0 = player; player = q; hurtPlayer(); player = s0; } }
   }
   if (!R.boss && !st.cleared[st.room] && enemies.length === 0) st.cleared[st.room] = 1;
   if (R.boss && !st[R.bk || 'boss'] && enemies.length === 0) { st[R.bk || 'boss'] = true; saveStory(); award('boss'); state = R.final ? 'ending' : 'sclear'; endPage = 0; if (R.final) award('story'); overT = 0; pointer.down = false; return; }
@@ -1531,6 +1553,8 @@ function render() {
   ctx.fillStyle = COLOR.bg;
   ctx.fillRect(0, 0, W, H);
   ui = []; hotAny = false;
+  Z = settings.mode === 'phone' && settings.zoom && screen === 'game' ? 1.35 : 1;
+  zcx = Z > 1 ? clamp(player.x, W / (2 * Z), W - W / (2 * Z)) : W / 2; zcy = Z > 1 ? clamp(player.y, H / (2 * Z), H - H / (2 * Z)) : H / 2;
   if (['menu', 'levels', 'shop', 'ach', 'story', 'online'].includes(screen) || (screen === 'settings' && settingsFrom === 'menu')) {
     drawMenuBg();
     drawAtmos();
@@ -1540,7 +1564,7 @@ function render() {
   }
 
   ctx.save();
-  ctx.translate(-cam.x, -cam.y);
+  ctx.translate(W / 2, H / 2); ctx.scale(Z, Z); ctx.translate(-zcx - cam.x, -zcy - cam.y);
   ctx.fillStyle = hk() ? darkOf(LEVELS[level % 30].ground) : LEVELS[level % 30].ground;
   ctx.fillRect(ARENA.l, ARENA.t, ARENA.r - ARENA.l, ARENA.b - ARENA.t);
   ctx.strokeStyle = hk() ? 'rgba(160,210,225,0.05)' : 'rgba(0,18,25,0.06)'; ctx.lineWidth = 1; ctx.beginPath();
@@ -1599,7 +1623,7 @@ function render() {
   finishUI();
 }
 
-const BUILD = 'build 3 - screen fix';
+const BUILD = 'build 4 - party doors + phone zoom';
 function finishUI() {
   if (screen === 'menu') { ctx.font = '12px ' + UI_FONT; ctx.fillStyle = 'rgba(233,216,166,0.4)'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(BUILD, 14, H - 12); }
   if (toast && performance.now() < toast.until) {
@@ -1735,7 +1759,7 @@ function drawSettings() {
   button('Computer', W / 2 - 125, 186, 240, 54, pick('pc'), settings.mode === 'pc' ? 'on' : '');
   button('Phone', W / 2 + 125, 186, 240, 54, pick('phone'), settings.mode === 'phone' ? 'on' : '');
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = 'rgba(233,216,166,0.65)'; ctx.font = '15px ' + UI_FONT;
-  ctx.fillText(settings.mode === 'pc' ? 'Keyboard and mouse' : 'Touch joysticks and buttons. Landscape works best.', W / 2, 242);
+  if (settings.mode === 'pc') ctx.fillText('Keyboard and mouse', W / 2, 242); else button('Zoom view: ' + (settings.zoom ? 'On' : 'Off'), W / 2, 240, 260, 36, () => { settings.zoom = !settings.zoom; saveSettings(); }, settings.zoom ? 'on' : '');
   ['Easy', 'Normal', 'Hard'].forEach((n, i) => button(n, W / 2 + (i - 1) * 170, 332, 160, 54, diff(i), settings.diff === i ? 'on' : ''));
   button('Sound: ' + (muted ? 'Off' : 'On'), W / 2 - 170, 410, 160, 54, () => { muted = !muted; saveSettings(); }, muted ? '' : 'on');
   button('Shake: ' + (settings.shake ? 'On' : 'Off'), W / 2, 410, 160, 54, () => { settings.shake = !settings.shake; saveSettings(); }, settings.shake ? 'on' : '');
@@ -1853,7 +1877,7 @@ misLoad();
 try { const dv = JSON.parse(localStorage.getItem('tds_daily') || '{}'); dailyBest = dv.d === daySeed() ? dv.s | 0 : 0; } catch (_) {}
 try { best = +localStorage.getItem('tds_best') || 0; unlocked = Math.max(1, +localStorage.getItem('tds_unlocked') || 1); } catch (_) {}
 try { const m = JSON.parse(localStorage.getItem('tds_meta')); if (m) { wallet = m.wallet | 0; Object.assign(meta, m.meta); Object.assign(ach, m.ach); tutStep = m.tut ? 3 : 0; } } catch (_) {}
-try { const s = JSON.parse(localStorage.getItem('tds_settings')); if (s) { if (s.mode) settings.mode = s.mode; settings.shake = s.shake !== false; settings.diff = s.diff == null ? 1 : s.diff; settings.lang = s.lang || 'en'; settings.look = s.lookv2 || 'classic'; settings.music = s.music == null ? 1 : s.music; muted = !!s.muted; } } catch (_) {}
+try { const s = JSON.parse(localStorage.getItem('tds_settings')); if (s) { if (s.mode) settings.mode = s.mode; settings.shake = s.shake !== false; settings.diff = s.diff == null ? 1 : s.diff; settings.lang = s.lang || 'en'; settings.look = s.lookv2 || 'classic'; settings.zoom = s.zoom !== false; settings.music = s.music == null ? 1 : s.music; muted = !!s.muted; } } catch (_) {}
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
   navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(() => {});
   let reloaded = false; navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
