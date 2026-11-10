@@ -212,7 +212,7 @@ function touchUp(e) {
 }
 function startGame(i, keep) {
   const sc = score, pk = Object.assign({}, perks), mh = player.maxHp;
-  story = false; daily = false; level = i || 0; reset();
+  story = false; daily = false; players = ALL; level = i || 0; reset();
   if (keep) { score = sc; Object.assign(perks, pk); player.maxHp = mh; }
   else for (let k = 0, n = Math.floor(level * 0.8); k < n; k++) {      // jumping ahead: start with a fair share of upgrades
     const q = PERKS[Math.random() * PERKS.length | 0]; perks[q.k]++; if (q.k === 'vit' && player.maxHp < 10) player.maxHp++;
@@ -278,8 +278,8 @@ const PFX = {
   trail:  { amount: 10, life: 0.1, color: '#ffffff',    vMin: 5,   vMax: 10,  spread: 42, gx: 0,  sMin: 6, sMax: 12, curve: TRAIL_CURVE, box: [5, 1], under: true }
 };
 
-const particles = [];
-const bursts = [];
+let particles = [];
+let bursts = [];
 
 function spawnParticle(cfg, x, y, rot) {
   const a = rot + rand(-cfg.spread, cfg.spread) * DEG, v = rand(cfg.vMin, cfg.vMax);
@@ -355,7 +355,7 @@ const TYPES = {
 };
 let level = 0, unlocked = 1, bannerText = '';
 const perks = { rapid: 0, multi: 0, pierce: 0, heavy: 0, swift: 0, vit: 0 };
-const pickups = [], eBullets = [];
+let pickups = [], eBullets = [];
 let wallet = 0, tutStep = 0, toast = null;
 const WEAPONS = {
   pistol:  { name: 'Pistol',  tag: 'PI',  price: 0,   cd: 1,    n: 1, spread: 0,   dm: 1,   sp: 800,  hl: 9,  hw: 4,   mz: 41, col: '#005f73', shape: 'bar', pierce: 0 },
@@ -370,7 +370,7 @@ const weapon = { id: 'pistol', t: 0 };
 const DIFF = [{ hp: 0.75, spd: 0.85 }, { hp: 1, spd: 1 }, { hp: 1.35, spd: 1.15 }];
 const stats = { kills: 0, time: 0 };
 const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
-const crates = [];
+let crates = [];
 function genCrates() {
   crates.length = 0;
   for (let n = Math.min(2 + Math.floor(level / 4), 7), tries = 0; crates.length < n && tries < 80; tries++) {
@@ -487,7 +487,7 @@ function misAdd(id, n) {
 }
 const hk = () => settings.look !== 'classic';          // "Hollow" look: dark silhouettes, glowing rims, fog, motes, grain
 const darkOf = hex => { const n = parseInt(hex.slice(1), 16); return 'rgb(' + Math.round((n >> 16 & 255) * 0.1 + 4) + ',' + Math.round((n >> 8 & 255) * 0.12 + 14) + ',' + Math.round((n & 255) * 0.14 + 22) + ')'; };
-const fxs = [];
+let fxs = [];
 const motes = Array.from({ length: 46 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: 0.4 + Math.random() * 1.6, v: 6 + Math.random() * 16, p: Math.random() * 6.28 }));
 function mk(w, h, fn) { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d')); return c; }
 const fogCv = mk(256, 256, g => { const r = g.createRadialGradient(128, 128, 0, 128, 128, 128); r.addColorStop(0, 'rgba(150,200,215,0.5)'); r.addColorStop(1, 'rgba(150,200,215,0)'); g.fillStyle = r; g.fillRect(0, 0, 256, 256); });
@@ -570,13 +570,13 @@ const ROOMS = {
   '3,2': { n: 'The Overlord', lv: 29, ex: 's', boss: 1, final: 1, bk: 'boss3', bn: 'The Overlord', bhp: 5200, after: '' }
 };
 /* organic cave rooms: every room gets its own outline, door corridors and rock pillars, generated from the room id */
-const rocks = [], pits = [], fallers = [];
+let rocks = [], pits = [], fallers = [];
 let safe = { x: 576, y: 390 }, rainT = 2;                                    // circular colliders: cave walls + pillars
 let wallCv = null, curShape = () => true, curOnLane = () => false;
 const hashStr = s => { let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; };
 function seeded(seed) { let a = seed | 0; return () => { a = a + 0x6D2B79F5 | 0; let q = Math.imul(a ^ a >>> 15, 1 | a); q = q + Math.imul(q ^ q >>> 7, 61 | q) ^ q; return ((q ^ q >>> 14) >>> 0) / 4294967296; }; }
 function onFloor(x, y, m) { return curShape(x, y) && !rocks.some(r => Math.hypot(r.x - x, r.y - y) < r.r + m); }
-function buildRoom(id) {
+function buildRoom(id, draw) {
   const R = ROOMS[id], rnd = seeded(hashStr(id)), lanes = R.ex.split(',');
   const n = R.boss ? 2 : 2 + rnd() * 2.2, f1 = 3 + (rnd() * 3 | 0), f2 = 5 + (rnd() * 3 | 0), p1 = rnd() * 6.28, p2 = rnd() * 6.28;
   const a1 = 0.06 + rnd() * 0.09, a2 = 0.03 + rnd() * 0.05, sz = R.boss ? 0.98 : 0.8 + rnd() * 0.14;
@@ -613,6 +613,7 @@ function buildRoom(id) {
       && !rocks.some(r => Math.hypot(r.x - x - 30, r.y - y - 30) < r.r + 78) && !pil.some(r => Math.hypot(r.x - x - 30, r.y - y - 30) < r.r + 80)) { pits.push({ x, y, w: 60, h: 60 }); k++; }
   }
   pil.forEach(q => rocks.push(q));
+  if (draw === false) return;                        // geometry only, nobody is looking at this room
   if (!wallCv) { wallCv = document.createElement('canvas'); wallCv.width = 2048; wallCv.height = 1056; }
   const g = wallCv.getContext('2d');
   g.setTransform(2, 0, 0, 2, -ARENA.l * 2, -ARENA.t * 2); g.globalCompositeOperation = 'source-over'; g.clearRect(ARENA.l, ARENA.t, 1024, 528);
@@ -632,6 +633,35 @@ const DIRS = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] }, OPP = { n: 's', s
 const doorPos = d => d === 'n' ? { x: W / 2, y: ARENA.t } : d === 's' ? { x: W / 2, y: ARENA.b } : d === 'w' ? { x: ARENA.l, y: 320 } : { x: ARENA.r, y: 320 };
 let story = false, st = { room: '0,0', bench: '0,0', nova: false, cleared: {}, seen: {}, open: {}, boss: false, shade: null, carried: 0, charms: {} };
 let restOK = true;
+const RS = {}, respawnQ = [];                        // per-room world state, so players can be in different rooms at the same time
+let curRS = null, viewId = null, pendingBench = false;
+function useRoom(id) {
+  if (curRS) { curRS.nfx = nova.fx; curRS.shape = curShape; curRS.onLane = curOnLane; }
+  const r = RS[id] || (RS[id] = { enemies: [], bullets: [], eBullets: [], pickups: [], crates: [], rocks: [], pits: [], fallers: [], fxs: [], nfx: [], particles: [], bursts: [], shape: () => true, onLane: () => false });
+  curRS = r; enemies = r.enemies; bullets = r.bullets; eBullets = r.eBullets; pickups = r.pickups; crates = r.crates; rocks = r.rocks; pits = r.pits; fallers = r.fallers; fxs = r.fxs;
+  nova.fx = r.nfx; particles = r.particles; bursts = r.bursts; curShape = r.shape; curOnLane = r.onLane; st.room = id; level = ROOMS[id].lv;
+  return r;
+}
+function moveTo(p, id, x, y) {                       // put one player into a room; the room is set up fresh if nobody else is in it
+  const occupied = ALL.some(q => q !== p && q.room === id);
+  p.room = id; p.x = x; p.y = y; p.inv = 1; useRoom(id);
+  if (!occupied) { const s0 = player; player = p; enterRoom(id); player = s0; }
+  p.safe = { x, y };
+}
+function applyView() {                               // point the globals back at the host's own room (what is drawn)
+  const id = P0.room; if (!id) return;
+  useRoom(id); players = ALL.filter(q => q.room === id); player = P0;
+  if (viewId !== id) { viewId = id; buildRoom(id, true); bctx.clearRect(ARENA.l, ARENA.t, 1024, 528); banner = 2.2; bannerText = ROOMS[id].n; }
+}
+function respawn(p) { p.dead = false; p.hp = p.maxHp; p.inv = 2; p.rt = undefined; moveTo(p, st.bench, W / 2 + rand(-50, 50), 390); }
+function benchAll() { viewId = null; const s0 = player; player = P0; useRoom(st.bench); enterRoom(st.bench); player = s0; applyView(); }
+function simStep(dt) {                               // one frame of the room that is currently selected
+  for (const p of players) if (!p.dead) { if (p === P0) updatePlayer(dt); else asPlayer(p, p.in || {}, () => { if (p.in && p.in.n) { p.in.n = false; useNova(); } updatePlayer(dt); }); }
+  updateEnemies(dt); updateBullets(dt);
+  for (const p of players) if (!p.dead) { const s0 = player; player = p; updatePickups(dt); player = s0; }
+  updateEBullets(dt); updateParticles(dt);
+  if (story) storyUpdate(dt);
+}
 let shopFromGame = false;
 const CHARMS = { fang: { n: 'Quick Fang', d: 'shoot faster', perk: 'rapid' }, soul: { n: 'Heavy Soul', d: 'hit harder', perk: 'heavy' }, heart: { n: 'Stone Heart', d: '+1 heart', perk: 'vit' }, frost: { n: 'Frost Veil', d: 'move faster', perk: 'swift' }, ember: { n: 'Ember Seed', d: '+1 bullet per shot', perk: 'multi' } };
 function applyCharm(id, say) {
@@ -663,13 +693,12 @@ function saveStory() { try { localStorage.setItem('tds_story', JSON.stringify(st
 function enterRoom(id) {
   const R = ROOMS[id]; st.room = id; st.seen[id] = 1; level = R.lv;
   enemies.length = bullets.length = particles.length = bursts.length = eBullets.length = pickups.length = 0;
-  bctx.clearRect(ARENA.l, ARENA.t, 1024, 528);
-  players.forEach(q => { if (q.dead) { q.dead = false; q.hp = Math.max(3, q.hp); q.inv = 2; } });
-  buildRoom(id); fallers.length = 0; rainT = 2; safe = { x: player.x, y: player.y };
+  if (id === P0.room) bctx.clearRect(ARENA.l, ARENA.t, 1024, 528);
+  buildRoom(id, id === P0.room); fallers.length = 0; rainT = 2; safe = { x: player.x, y: player.y };
   if (pits.length && !st.dashHint) { st.dashHint = 1; toast = { text: 'Dash (Shift) leaps across gaps. Press it just before the edge', until: performance.now() + 4000 }; }
   if (!R.cr) { genCrates(); R.cr = crates.slice(); }
   crates.length = 0; R.cr.forEach(c => crates.push(c));
-  banner = 2.2; bannerText = R.n;
+  if (id === P0.room) { banner = 2.2; bannerText = R.n; }
   if (!st.cleared[id] && !R.boss) {
     const pool = R.types || (R.lv >= 3 ? ['runner', 'shooter', 'splitter', 'bomber', 'tank'] : R.lv >= 2 ? ['grunt', 'runner', 'shooter', 'splitter'] : R.lv >= 1 ? ['grunt', 'runner'] : ['grunt']);
     for (let i = 0; i < R.en; i++) {
@@ -681,13 +710,13 @@ function enterRoom(id) {
   if (R.boss && !st[R.bk || 'boss']) { spawnAt(W / 2, 250, 'mega'); enemies[0].health = enemies[0].max = R.bhp || 2600; bannerText = 'Boss: ' + (R.bn || 'The Colossus'); cam.strength = 25; }
   if (st.shade && st.shade.room === id) pickups.push({ x: st.shade.x, y: st.shade.y, t: 0, c: st.shade.c, shade: true });
 }
-function goRoom(d) {
+function goRoom(d) {                                 // only the player who reaches the door changes room; everyone else stays where they are
   const [x, y] = st.room.split(',').map(Number), nid = (x + DIRS[d][0]) + ',' + (y + DIRS[d][1]);
   if (!ROOMS[nid]) return;
   ROOMS[st.room].cr = crates.slice();
   const o = OPP[d], p = doorPos(o);
-  player.x = p.x + (o === 'w' ? 70 : o === 'e' ? -70 : 0); player.y = p.y + (o === 'n' ? 70 : o === 's' ? -70 : 0); player.inv = 0.6;
-  enterRoom(nid); players.forEach(q => { if (q !== player) { q.x = player.x + rand(-50, 50); q.y = player.y + rand(-50, 50); q.inv = 1; q.safe = { x: q.x, y: q.y }; } }); saveStory();
+  moveTo(player, nid, p.x + (o === 'w' ? 70 : o === 'e' ? -70 : 0), p.y + (o === 'n' ? 70 : o === 's' ? -70 : 0));
+  saveStory();
 }
 function rest() {                                    // bench: heal, bank your coins, save, and the world stirs again
   st.bench = st.room; st.carried = 0; player.hp = player.maxHp; players.forEach(q => { q.hp = q.maxHp; q.dead = false; }); restOK = false;
@@ -699,7 +728,7 @@ function storyDie() {
   if (st.carried > 0) { st.shade = { room: st.room, x: player.x, y: player.y, c: st.carried }; wallet = Math.max(0, wallet - st.carried); }
   st.carried = 0; saveMeta(); cam.strength = 20; blip(90, 0.5, 'sawtooth');
   toast = { text: 'You fell. Your coins wait where you died', until: performance.now() + 3500 };
-  player.hp = player.maxHp; player.inv = 2; player.x = W / 2; player.y = 390; players.forEach(q => { q.dead = false; q.hp = q.maxHp; q.inv = 2; q.x = W / 2 + rand(-60, 60); q.y = 390; }); enterRoom(st.bench);
+  ALL.forEach(q => { q.dead = false; q.rt = undefined; q.hp = q.maxHp; q.inv = 2; q.x = W / 2 + rand(-60, 60); q.y = 390; q.room = st.bench; q.safe = { x: q.x, y: q.y }; }); P0.x = W / 2; P0.y = 390; pendingBench = true;
 }
 function storyUpdate(dt) {                          // run the room logic for each living player; whoever reaches a door moves the whole party
   let first = true;
@@ -748,7 +777,9 @@ function startStory(fresh) {
   for (const id in ROOMS) delete ROOMS[id].cr;
   level = 0; reset(); story = true; daily = false; restOK = false;
   st.charms = st.charms || {}; for (const id in st.charms) applyCharm(id, false);
-  player.x = W / 2; player.y = 390; enterRoom(st.bench); saveStory();
+  player.x = W / 2; player.y = 390;
+  for (const k in RS) delete RS[k];
+  curRS = null; viewId = null; ALL.forEach(q => { q.room = st.bench; }); useRoom(st.bench); enterRoom(st.bench); applyView(); saveStory();
   screen = 'game'; started = true; setPaused(false);
 }
 function openStory() { if (hasStory()) screen = 'story'; else startStory(true); }
@@ -868,7 +899,7 @@ async function sig(m) {                              // signaling over a free pu
 }
 function closeNet() {
   if (NET.es) NET.es.close();
-  NET.es = null; NET.hello = false; NET.room = ''; NET.status = 'Not connected'; NET.on = false; NET.client = false; players.length = 1; player = P0;
+  NET.es = null; NET.hello = false; NET.room = ''; NET.status = 'Not connected'; NET.on = false; NET.client = false; ALL.length = 1; players = ALL; player = P0;
   for (const k in NET.links) { try { NET.links[k].pc.close(); } catch (_) {} delete NET.links[k]; }
 }
 function joinRoom(code, host) {
@@ -939,16 +970,23 @@ function nearestAlive(e) {
 function startOnline(mode) {
   const ls = Object.values(NET.links).filter(l => l.open);
   if (!ls.length) { NET.status = 'Nobody is connected yet'; return; }
-  players.length = 1; NET.on = true; NET.client = false;
+  ALL.length = 1; players = ALL; NET.on = true; NET.client = false;
   if (mode === 'story') startStory(!hasStory()); else startGame(0);
-  ls.forEach((l, i) => { const p = mkPlayer(); p.sk = (meta.skin + i + 1) % SKINS.length; p.x = W / 2 + 50 * (i + 1); l.player = p; l.me = i + 1; players.push(p); });
+  ls.forEach((l, i) => { const p = mkPlayer(); p.sk = (meta.skin + i + 1) % SKINS.length; p.x = W / 2 + 50 * (i + 1); p.room = P0.room; p.safe = { x: p.x, y: p.y }; l.player = p; l.me = i + 1; ALL.push(p); });
+  if (mode === 'story') applyView();
   ls.forEach(l => { try { l.dc.send(JSON.stringify({ t: 'go', mode, me: l.me })); } catch (_) {} });
 }
 function leaveOnline(msg) { closeNet(); screen = 'menu'; setPaused(true); if (msg) toast = { text: msg, until: performance.now() + 3500 }; }
+function snapFor(l) {                               // each guest is sent the room THEY are in
+  if (!story || !l.player.room) { const m = snap(); m.me = players.indexOf(l.player); return m; }
+  const keep = st.room, sp = players; useRoom(l.player.room); players = ALL.filter(q => q.room === l.player.room);
+  const m = snap(); m.me = players.indexOf(l.player);
+  useRoom(keep); players = sp; return m;
+}
 function snap() {
   return { t: 'st', s: state, sc: score, w: wave, lv: level, st: story ? st.room : '', bn: bannerText, ba: banner, fl: flash, cs: cam.strength, co: combo, wl: wallet, wp: weapon.id, nc: nova.cd,
     cr: crates.map(k => [k.x | 0, k.y | 0, k.hw, k.hh, k.bar ? 1 : 0]),
-    pl: players.map((p, i) => [p.x | 0, p.y | 0, +p.aim.toFixed(2), p.hp, p.maxHp, +p.sx.toFixed(2), +p.sy.toFixed(2), p.inv > 0 ? 1 : 0, p.dead ? 1 : 0, +p.rotScale.toFixed(2), p.dashCd, i === 0 ? meta.skin : p.sk]),
+    pl: players.map((p, i) => [p.x | 0, p.y | 0, +p.aim.toFixed(2), p.hp, p.maxHp, +p.sx.toFixed(2), +p.sy.toFixed(2), p.inv > 0 ? 1 : 0, p.dead ? 1 : 0, +p.rotScale.toFixed(2), p.dashCd, p === P0 ? meta.skin : p.sk]),
     en: enemies.map(e => [e.x | 0, e.y | 0, e.type, e.sc, e.col, +e.hitT.toFixed(2), +e.wind.toFixed(2), e.dying ? 1 : 0, +e.dieT.toFixed(2), e.text, e.health, e.max, e.elite ? 1 : 0, +e.animT.toFixed(2)]),
     bu: bullets.map(b => [b.x | 0, b.y | 0, +b.rot.toFixed(2), b.col, b.shape, b.hl, b.hw]), eb: eBullets.map(b => [b.x | 0, b.y | 0]),
     pk: pickups.map(k => [k.x | 0, k.y | 0, +k.t.toFixed(1), k.c || 0, k.w || '', k.shade ? 1 : 0]), nv: nova.fx.map(f => [f.x | 0, f.y | 0, +f.t.toFixed(2), f.r || 0]),
@@ -963,7 +1001,7 @@ function applySnap(m) {
   while (players.length < m.pl.length) players.push(mkPlayer());
   players.length = m.pl.length;
   m.pl.forEach((a, i) => { Object.assign(players[i], { x: a[0], y: a[1], aim: a[2], hp: a[3], maxHp: a[4], sx: a[5], sy: a[6], inv: a[7] ? 1 : 0, dead: !!a[8], rotScale: a[9], dashCd: a[10], sk: a[11] }); });
-  player = players[NET.me] || players[0];
+  player = players[m.me >= 0 ? m.me : 0] || players[0];
   enemies.length = 0; m.en.forEach(a => enemies.push({ x: a[0], y: a[1], type: a[2], sc: a[3], col: a[4], hitT: a[5], wind: a[6], dying: !!a[7], dieT: a[8], text: a[9], health: a[10], max: a[11], elite: !!a[12], animT: a[13], hw: 16 * a[3], hh: 24 * a[3] }));
   bullets.length = 0; m.bu.forEach(a => bullets.push({ x: a[0], y: a[1], rot: a[2], col: a[3], shape: a[4], hl: a[5], hw: a[6] }));
   eBullets.length = 0; m.eb.forEach(a => eBullets.push({ x: a[0], y: a[1] }));
@@ -985,9 +1023,8 @@ function netTick() {                                 // 30 times a second: host 
   const now = performance.now(); if (now - NET.last < 33) return; NET.last = now;
   const ls = Object.values(NET.links);
   if (NET.client) { const l = ls.find(x => x.open); if (!l) return leaveOnline('The host disconnected'); try { l.dc.send(JSON.stringify({ t: 'in', i: readInput() })); } catch (_) {} return; }
-  for (let i = players.length - 1; i >= 1; i--) { const l = ls.find(x => x.player === players[i]); if (l && !l.open) players.splice(i, 1); }
-  const s = JSON.stringify(snap());
-  for (const l of ls) if (l.open && l.player) try { l.dc.send(s); } catch (_) {}
+  for (let i = ALL.length - 1; i >= 1; i--) { const l = ls.find(x => x.player === ALL[i]); if (l && !l.open) ALL.splice(i, 1); }
+  for (const l of ls) if (l.open && l.player) try { l.dc.send(JSON.stringify(snapFor(l))); } catch (_) {}
 }
 function clientUpdate(dt) { updateParticles(dt); updateCamera(dt); }
 function drawWait() {
@@ -1140,9 +1177,9 @@ function hurtPlayer() {
   for (let k = 0; k < 3; k++) { const rt = Math.random() * 6.28; addBurst(PFX.blood, () => ({ x: player.x, y: player.y, rot: rt })); }
   if (navigator.vibrate) navigator.vibrate(40);
   if (player.hp <= 0) {
-    if (players.length > 1) {                          // co-op: a fallen player waits for the next wave/room; everyone down = defeat
-      player.dead = true; player.hp = 0;
-      if (!players.every(q => q.dead)) { toast = { text: 'A player is down. They return next wave', until: performance.now() + 2500 }; return; }
+    if (ALL.length > 1) {                          // co-op: a fallen player waits for the next wave/room; everyone down = defeat
+      player.dead = true; player.hp = 0; player.rt = story ? 5 : undefined;
+      if (!ALL.every(q => q.dead)) { toast = { text: 'A player is down. They return next wave', until: performance.now() + 2500 }; return; }
       player = P0;
     }
     if (story) { storyDie(); return; }
@@ -1159,9 +1196,10 @@ let player = {
   cooldown: 0, shotT: 1, rotScale: 1, hp: MAX_HP, maxHp: MAX_HP, inv: 0, dashT: 0, dashCd: 0, dx: 0, dy: 0,
   pushDx: 0, pushDy: 0, pushStr: 0, pushT: 0, trailAcc: 0
 };
-const players = [player], P0 = player;
+const ALL = [player], P0 = player;
+let players = ALL;                                  // players in the room being simulated / shown
 const mkPlayer = () => ({ x: W / 2, y: H / 2 + 60, lr: true, aim: 0, sx: 1, sy: 1, anim: 'idle', animT: 0, cooldown: 0, shotT: 1, rotScale: 1, hp: P0.maxHp, maxHp: P0.maxHp, inv: 1, dashT: 0, dashCd: 0, dx: 0, dy: 0, pushDx: 0, pushDy: 0, pushStr: 0, pushT: 0, trailAcc: 0, dead: false });
-const bullets = [];
+let bullets = [];
 
 function shoot() {
   const c = Math.cos(player.aim), s = Math.sin(player.aim);
@@ -1256,7 +1294,7 @@ function updatePlayer(dt) {
 }
 
 /* ------------------------------- enemies ----------------------------- */
-const enemies = [];
+let enemies = [];
 const ENEMY_HALF_W = 16, ENEMY_HALF_H = 24, ENEMY_STOP_DIST = 46, ENEMY_MIN_GAP = 40;
 const HIT_LEN = 0.2, DEATH_DELAY = 0.2, DEATH_LEN = 0.2;
 
@@ -1413,14 +1451,13 @@ function update(dt) {
   comboT -= dt; if (comboT <= 0) combo = 0;
   if (state !== 'play') { overT += dt; updateParticles(dt); updateCamera(dt); return; }
   if (freeze > 0) { freeze -= dt; updateCamera(dt); return; }
-  if (!P0.dead) updatePlayer(dt);
-  for (const p of players) if (p !== P0 && !p.dead) asPlayer(p, p.in || {}, () => { if (p.in && p.in.n) { p.in.n = false; useNova(); } updatePlayer(dt); });
-  updateEnemies(dt);
-  updateBullets(dt);
-  for (const p of players) if (!p.dead) { const s0 = player; player = p; updatePickups(dt); player = s0; }
-  updateEBullets(dt);
-  updateParticles(dt);
-  if (story) storyUpdate(dt);
+  if (story) {
+    for (const id of [...new Set(ALL.map(q => q.room))]) { useRoom(id); players = ALL.filter(q => q.room === id); if (players.some(q => !q.dead)) simStep(dt); }   // empty rooms are paused
+    for (const p of ALL) if (p.dead && p.rt !== undefined) { p.rt -= dt; if (p.rt <= 0) { p.rt = undefined; respawnQ.push(p); } }   // fallen players return at the bench, even if their room is empty
+    if (pendingBench) { pendingBench = false; benchAll(); }
+    for (const q of respawnQ.splice(0)) respawn(q);
+    applyView();
+  } else simStep(dt);
   updateCamera(dt);
 }
 
@@ -1623,7 +1660,7 @@ function render() {
   finishUI();
 }
 
-const BUILD = 'build 4 - party doors + phone zoom';
+const BUILD = 'build 5 - independent rooms';
 function finishUI() {
   if (screen === 'menu') { ctx.font = '12px ' + UI_FONT; ctx.fillStyle = 'rgba(233,216,166,0.4)'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(BUILD, 14, H - 12); }
   if (toast && performance.now() < toast.until) {
