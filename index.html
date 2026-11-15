@@ -872,7 +872,7 @@ function waitIce(pc) {
   });
 }
 function makeLink(id, initiator) {
-  const pc = new RTCPeerConnection(RTC_CFG), link = { id, pc, dc: null, open: false, ping: -1, audio: null, state: 'new' };
+  const pc = new RTCPeerConnection(RTC_CFG), link = { id, pc, dc: null, open: false, ping: -1, audio: null, state: 'new', t0: performance.now(), how: '', warned: false };
   NET.links[id] = link;
   if (initiator) { const tr = pc.addTransceiver('audio', { direction: 'sendrecv' }); link.sender = tr.sender; if (NET.mic) tr.sender.replaceTrack(NET.mic.getAudioTracks()[0]); }
   pc.ontrack = e => { const a = new Audio(); a.srcObject = e.streams[0] || new MediaStream([e.track]); a.autoplay = true; link.audio = a; a.play().catch(() => {}); };
@@ -895,7 +895,24 @@ function onNet(link, raw) {                          // game messages will join 
     NET.on = true; NET.client = true; NET.me = m.me; players.length = 1; story = m.mode === 'story'; tutStep = 3; screen = 'game'; started = true; setPaused(false);
   }
 }
-setInterval(() => { for (const k in NET.links) { const l = NET.links[k]; if (l.open) try { l.dc.send(JSON.stringify({ t: 'ping', ts: performance.now() })); } catch (_) {} } }, 1000);
+async function linkHow(l) {                          // was this link made directly, or through a relay server?
+  try {
+    const st = await l.pc.getStats(); let sel = null;
+    st.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) sel = st.get(r.selectedCandidatePairId); });
+    if (!sel) st.forEach(r => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') sel = r; });
+    if (sel) { const a = st.get(sel.localCandidateId), b = st.get(sel.remoteCandidateId); l.how = (a && a.candidateType === 'relay') || (b && b.candidateType === 'relay') ? 'relay' : 'direct'; }
+  } catch (_) {}
+}
+setInterval(() => {
+  for (const k in NET.links) {
+    const l = NET.links[k];
+    if (l.open) { try { l.dc.send(JSON.stringify({ t: 'ping', ts: performance.now() })); } catch (_) {} if (!l.how) linkHow(l); }
+    else if (!l.warned && performance.now() - l.t0 > 25000) {       // do not leave people waiting forever: say what is going on
+      l.warned = true; NET.status = 'Could not connect. A network is blocking direct links. Add a free relay (Relay button) or try mobile data';
+      toast = { text: 'Connection failed. See the Relay button', until: performance.now() + 5000 };
+    }
+  }
+}, 1000);
 const slim = d => ({ type: d.type, sdp: d.sdp.split('\r\n').filter(l => !(l.indexOf('a=candidate') === 0 && / tcp /i.test(l))).join('\r\n') });
 const pub = m => fetch('https://ntfy.sh/' + NET.topic, { method: 'POST', body: JSON.stringify(Object.assign({ from: NET.id, nm: NET.name }, m)) }).catch(() => {});
 async function offerTo(id) { const l = makeLink(id, true); await l.pc.setLocalDescription(await l.pc.createOffer()); await waitIce(l.pc); pub({ t: 'offer', to: id, sdp: slim(l.pc.localDescription) }); }
@@ -962,6 +979,7 @@ function toggleMute() { NET.muted = !NET.muted; if (NET.mic) NET.mic.getAudioTra
 function drawOnline() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = COLOR.ground; ctx.font = '700 40px ' + UI_FONT; ctx.fillText('Online', W / 2, 66);
+  button('Relay: ' + (NET.relay ? 'on' : 'off'), 150, 38, 230, 34, networkSetup, NET.relay ? 'on' : '');
   ctx.fillStyle = COLOR.gun; ctx.font = '18px ' + UI_FONT; ctx.fillText((NET.opts.name ? NET.opts.name + '     ' : '') + NET.status + (NET.room ? '     Code: ' + NET.room : ''), W / 2, 100);
   button('Room list', W / 2 - 130, 154, 240, 46, () => { closeNet(); screen = 'rooms'; lobbyRefresh(); }, 'primary');
   button('Copy invite code', W / 2 + 130, 154, 240, 46, () => { try { navigator.clipboard.writeText(NET.room); } catch (_) {} if (NET.room) NET.status = 'Code copied: ' + NET.room; });
@@ -976,7 +994,7 @@ function drawOnline() {
   ctx.fillStyle = COLOR.ground; ctx.font = '600 18px ' + UI_FONT; ctx.fillText('You  (' + (NET.name || NET.id) + ')   ' + (NET.host ? 'host' : ''), W / 2 - 336, 386);
   Object.values(NET.links).forEach((l, i) => {
     ctx.fillStyle = l.open ? '#94d2bd' : 'rgba(233,216,166,0.6)';
-    ctx.fillText((NET.names[l.id] || l.id) + '    ' + (l.open ? 'connected' : l.state) + '    ' + (l.ping >= 0 ? l.ping + ' ms' : '...') + '    voice: ' + (l.audio ? 'ready' : '-'), W / 2 - 336, 424 + i * 34);
+    ctx.fillText((NET.names[l.id] || l.id) + '    ' + (l.open ? 'connected' + (l.how ? (l.how === 'relay' ? ' (relay)' : ' (direct)') : '') : l.state) + '    ' + (l.ping >= 0 ? l.ping + ' ms' : '...') + '    voice: ' + (l.audio ? 'ready' : '-'), W / 2 - 336, 424 + i * 34);
   });
   ctx.textAlign = 'center';
   if (NET.host && Object.values(NET.links).some(l => l.open)) { button('Start Arcade', W / 2 - 150, 548, 280, 44, () => startOnline('arcade'), 'primary'); button('Start Story', W / 2 + 150, 548, 280, 44, () => startOnline('story'), 'primary'); }
@@ -1049,7 +1067,8 @@ function readInput() {                               // what a guest sends to th
   NET.nova = false; return o;
 }
 function netTick() {                                 // 30 times a second: host sends the world, guests send their inputs
-  const now = performance.now(); if (now - NET.last < 33) return; NET.last = now;
+  const now = performance.now(), gap = Object.values(NET.links).some(l => l.how === 'relay') ? 50 : 33;   // relayed links use less data
+  if (now - NET.last < gap) return; NET.last = now;
   const ls = Object.values(NET.links);
   if (NET.client) { const l = ls.find(x => x.open); if (!l) return leaveOnline('The host disconnected'); try { l.dc.send(JSON.stringify({ t: 'in', i: readInput() })); } catch (_) {} return; }
   for (let i = ALL.length - 1; i >= 1; i--) { const l = ls.find(x => x.player === ALL[i]); if (l && !l.open) ALL.splice(i, 1); }
@@ -1141,6 +1160,35 @@ async function joinByCode() {
   if (LB.es) { LB.es.close(); LB.es = null; }
   NET.opts = { name: '', max: 4, pw: '', pub: false }; joinRoom(v.c.trim().toUpperCase(), false, v.pw.trim()); screen = 'online';
 }
+const BASE_ICE = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+NET.relay = 0; NET.relayApp = ''; NET.relayKey = '';
+async function loadRelay() {
+  let list = null; const app = (NET.relayApp || '').trim();
+  try {
+    if (app.charAt(0) === '[') list = JSON.parse(app);                                             // advanced: a pasted list of ICE servers
+    else if (app && NET.relayKey) list = await (await fetch('https://' + app + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(NET.relayKey.trim()))).json();
+  } catch (_) { list = null; }
+  if (Array.isArray(list) && list.length) {
+    RTC_CFG.iceServers = BASE_ICE.concat(list); NET.relay = list.length;
+    try { localStorage.setItem('tds_ice', JSON.stringify(list)); localStorage.setItem('tds_relay', JSON.stringify({ app: NET.relayApp, key: NET.relayKey })); } catch (_) {}
+    toast = { text: 'Relay ready (' + list.length + ' servers)', until: performance.now() + 3000 };
+  } else toast = { text: 'Could not load the relay. Check the app name and key', until: performance.now() + 4500 };
+}
+async function networkSetup() {
+  const v = await showModal('Relay server', [
+    { id: 'app', label: 'Free relay from metered.ca: your app name (the xxx in xxx.metered.live)', value: NET.relayApp, max: 4000 },
+    { id: 'key', label: 'API key', value: NET.relayKey, max: 80 }], 'Save');
+  if (!v) return;
+  NET.relayApp = v.app.trim(); NET.relayKey = v.key.trim();
+  if (!NET.relayApp) { RTC_CFG.iceServers = BASE_ICE.slice(); NET.relay = 0; try { localStorage.removeItem('tds_ice'); localStorage.removeItem('tds_relay'); } catch (_) {} return; }
+  await loadRelay();
+}
+try {
+  const ice = JSON.parse(localStorage.getItem('tds_ice') || 'null'), rl = JSON.parse(localStorage.getItem('tds_relay') || 'null');
+  if (rl) { NET.relayApp = rl.app || ''; NET.relayKey = rl.key || ''; }
+  if (Array.isArray(ice) && ice.length) { RTC_CFG.iceServers = BASE_ICE.concat(ice); NET.relay = ice.length; }
+} catch (_) {}
+if (NET.relayApp && NET.relayApp.charAt(0) !== '[') loadRelay();                                   // refresh the credentials in the background
 function addLate(l) {                                // someone joined a game that is already running
   const p = mkPlayer(); p.sk = (meta.skin + ALL.length) % SKINS.length; p.room = P0.room; p.x = P0.x + rand(-40, 40); p.y = P0.y + rand(-40, 40); p.safe = { x: p.x, y: p.y };
   l.player = p; ALL.push(p); try { l.dc.send(JSON.stringify({ t: 'go', mode: story ? 'story' : 'arcade', me: ALL.length - 1 })); } catch (_) {}
@@ -1153,6 +1201,7 @@ function drawRooms() {
   ctx.fillStyle = COLOR.ground; ctx.font = '700 38px ' + UI_FONT; ctx.fillText('Online rooms', W / 2, 66);
   ctx.fillStyle = COLOR.gun; ctx.font = '17px ' + UI_FONT; ctx.fillText(LB.status || 'Pick a room to join, or create your own', W / 2, 96);
   button('Name: ' + (NET.name || '?'), W - 150, 38, 230, 34, editName);
+  button('Relay: ' + (NET.relay ? 'on' : 'off'), 150, 38, 230, 34, networkSetup, NET.relay ? 'on' : '');
   button('Create room', W / 2 - 250, 144, 230, 46, createRoomUI, 'primary');
   button('Join with code', W / 2, 144, 230, 46, joinByCode);
   button('Refresh', W / 2 + 250, 144, 230, 46, lobbyRefresh);
@@ -1797,7 +1846,7 @@ function render() {
   finishUI();
 }
 
-const BUILD = 'build 6 - public lobby';
+const BUILD = 'build 8 - relay support';
 function finishUI() {
   if (screen === 'menu') { ctx.font = '12px ' + UI_FONT; ctx.fillStyle = 'rgba(233,216,166,0.4)'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(BUILD, 14, H - 12); }
   if (toast && performance.now() < toast.until) {
