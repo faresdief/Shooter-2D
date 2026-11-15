@@ -221,6 +221,7 @@ function touchUp(e) {
   if (s.role === 'dash') stick.dash = false; else if (s.role === 'move') stick.move = null; else stick.fire = false;
 }
 function startGame(i, keep) {
+  PVP.on = false;
   const sc = score, pk = Object.assign({}, perks), mh = player.maxHp;
   story = false; daily = false; players = ALL; level = i || 0; reset();
   if (keep) { score = sc; Object.assign(perks, pk); player.maxHp = mh; }
@@ -243,6 +244,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyM') muted = !muted;
   else if (e.code === 'KeyR' && state === 'over') reset();
   else if ((e.code === 'KeyE' || e.code === 'Space') && screen === 'game' && !paused) useNova();
+  else if (e.code === 'KeyT' && screen === 'game' && NET.on) chatUI();
   else if (e.code === 'KeyF' && screen === 'game' && !paused && nearMerchant()) openTrade();
   else if (state === 'upgrade' && /^Digit[123]$/.test(e.code)) pickUpgrade(+e.code[5] - 1);
   else if ((e.code === 'KeyP' || e.code === 'Escape') && screen === 'game' && state === 'play') setPaused(!paused);
@@ -668,7 +670,7 @@ function respawn(p) { p.dead = false; p.hp = p.maxHp; p.inv = 2; p.rt = undefine
 function benchAll() { viewId = null; const s0 = player; player = P0; useRoom(st.bench); enterRoom(st.bench); player = s0; applyView(); }
 function simStep(dt) {                               // one frame of the room that is currently selected
   for (const p of players) if (!p.dead) { if (p === P0) updatePlayer(dt); else asPlayer(p, p.in || {}, () => { if (p.in && p.in.n) { p.in.n = false; useNova(); } updatePlayer(dt); }); }
-  updateEnemies(dt); updateBullets(dt);
+  updateEnemies(dt); updateBullets(dt); if (PVP.on) pvpStep(dt);
   for (const p of players) if (!p.dead) { const s0 = player; player = p; updatePickups(dt); player = s0; }
   updateEBullets(dt); updateParticles(dt);
   if (story) storyUpdate(dt);
@@ -891,8 +893,14 @@ function onNet(link, raw) {                          // game messages will join 
   else if (m.t === 'pong') link.ping = Math.round(performance.now() - m.ts);
   else if (m.t === 'in') { if (link.player) link.player.in = Object.assign(link.player.in || {}, m.i, { n: (link.player.in && link.player.in.n) || m.i.n }); }
   else if (m.t === 'st') applySnap(m);
+  else if (m.t === 'rdy') link.rdy = !!m.v;
+  else if (m.t === 'chat') { if (NET.host) { const n = NET.names[link.id] || link.id, t = String(m.m).slice(0, 80); chatAdd(n, t); relayChat(n, t, link); } else chatAdd(m.n, m.m); }
+  else if (m.t === 'trade') { if (NET.host && story) try { link.dc.send(JSON.stringify({ t: 'meta', m: meta, w: wallet })); } catch (_) {} }
+  else if (m.t === 'meta') { if (!NET.host && !NET.shop) { NET.shop = JSON.stringify(meta); Object.keys(meta).forEach(k => delete meta[k]); Object.assign(meta, m.m); wallet = m.w; shopFromGame = true; shopTab = 0; screen = 'shop'; setPaused(true); } }
+  else if (m.t === 'shop') { if (NET.host && story && m.m) { Object.assign(meta, m.m); if (typeof m.w === 'number') wallet = m.w; if (!(weapon.t > 0)) weapon.id = meta.eq; saveMeta(); } }
+  else if (m.t === 'kick') { if (!NET.host) leaveOnline('The host removed you'); }
   else if (m.t === 'go') {                           // the host started a game: switch to guest mode
-    NET.on = true; NET.client = true; NET.me = m.me; players.length = 1; story = m.mode === 'story'; tutStep = 3; screen = 'game'; started = true; setPaused(false);
+    NET.rdy = false; NET.on = true; NET.client = true; NET.me = m.me; players.length = 1; story = m.mode === 'story'; tutStep = 3; screen = 'game'; started = true; setPaused(false);
   }
 }
 async function linkHow(l) {                          // was this link made directly, or through a relay server?
@@ -921,6 +929,7 @@ async function sig(m) {                              // signaling over the free 
   if (m.nm) NET.names[m.from] = m.nm;
   if (m.t === 'hello') {                             // someone wants in: only the host decides
     if (!NET.host) return;
+    if (NET.ban[m.from]) return pub({ t: 'deny', to: m.from, why: 'Removed by the host' });
     const old = NET.links[m.from]; if (old && old.state !== 'failed' && old.state !== 'closed') return;
     if (Object.keys(NET.links).length + 1 >= NET.opts.max) return pub({ t: 'deny', to: m.from, why: 'Room is full' });
     if (NET.opts.pw) { const n = Math.random().toString(36).slice(2); NET.nonce[m.from] = n; return pub({ t: 'chal', to: m.from, n }); }
@@ -942,7 +951,7 @@ async function sig(m) {                              // signaling over the free 
 function closeNet() {
   if (NET.host && NET.room && NET.opts.pub) lobbyPub({ t: 'gone', code: NET.room });
   if (LB.hostEs) { LB.hostEs.close(); LB.hostEs = null; }
-  NET.nonce = {}; NET.names = {}; NET.host = false;
+  NET.nonce = {}; NET.names = {}; NET.host = false; NET.ban = {}; NET.chat = []; NET.rdy = false; PVP.on = false; endShop();
   if (NET.es) NET.es.close();
   NET.es = null; NET.hello = false; NET.room = ''; NET.status = 'Not connected'; NET.on = false; NET.client = false; ALL.length = 1; players = ALL; player = P0;
   for (const k in NET.links) { try { NET.links[k].pc.close(); } catch (_) {} delete NET.links[k]; }
@@ -994,11 +1003,17 @@ function drawOnline() {
   ctx.fillStyle = COLOR.ground; ctx.font = '600 18px ' + UI_FONT; ctx.fillText('You  (' + (NET.name || NET.id) + ')   ' + (NET.host ? 'host' : ''), W / 2 - 336, 386);
   Object.values(NET.links).forEach((l, i) => {
     ctx.fillStyle = l.open ? '#94d2bd' : 'rgba(233,216,166,0.6)';
-    ctx.fillText((NET.names[l.id] || l.id) + '    ' + (l.open ? 'connected' + (l.how ? (l.how === 'relay' ? ' (relay)' : ' (direct)') : '') : l.state) + '    ' + (l.ping >= 0 ? l.ping + ' ms' : '...') + '    voice: ' + (l.audio ? 'ready' : '-'), W / 2 - 336, 424 + i * 34);
+    ctx.fillText((NET.names[l.id] || l.id) + '    ' + (l.open ? 'connected' + (l.how ? (l.how === 'relay' ? ' (relay)' : ' (direct)') : '') : l.state) + '    ' + (l.ping >= 0 ? l.ping + ' ms' : '...') + '    voice: ' + (l.audio ? 'ready' : '-') + (l.rdy ? '    READY' : ''), W / 2 - 336, 424 + i * 34);
   });
   ctx.textAlign = 'center';
-  if (NET.host && Object.values(NET.links).some(l => l.open)) { button('Start Arcade', W / 2 - 150, 548, 280, 44, () => startOnline('arcade'), 'primary'); button('Start Story', W / 2 + 150, 548, 280, 44, () => startOnline('story'), 'primary'); }
-  else if (!NET.host && Object.values(NET.links).some(l => l.open)) { ctx.fillStyle = COLOR.gun; ctx.font = '18px ' + UI_FONT; ctx.fillText('Connected. Waiting for the host to start the game...', W / 2, 568); }
+  const op = Object.values(NET.links).filter(l => l.open);
+  if (NET.host && op.length) {
+    op.forEach((l, i) => button('Kick', W / 2 + 290, 418 + i * 34, 70, 28, () => kickLink(l)));
+    if (op.every(l => l.rdy)) { button('Arcade', W / 2 - 240, 548, 220, 44, () => startOnline('arcade'), 'primary'); button('Story', W / 2, 548, 220, 44, () => startOnline('story'), 'primary'); button(op.length % 2 ? 'PvP ' + ((op.length + 1) >> 1) + 'v' + ((op.length + 1) >> 1) : 'PvP (2 or 4 players)', W / 2 + 240, 548, 220, 44, () => { if (op.length % 2) startOnline('pvp'); else NET.status = 'PvP needs 2 or 4 players'; }, op.length % 2 ? 'primary' : ''); }
+    else { ctx.fillStyle = COLOR.gun; ctx.font = '18px ' + UI_FONT; ctx.fillText('Waiting for everyone to press Ready (' + op.filter(l => l.rdy).length + '/' + op.length + ')', W / 2, 568); }
+  } else if (!NET.host && op.length) button(NET.rdy ? 'Ready  (tap to cancel)' : "I'm ready", W / 2, 548, 300, 44, () => setReady(!NET.rdy), NET.rdy ? 'on' : 'primary');
+  if (op.length) button('Chat', W / 2 + 260, 604, 140, 46, chatUI);
+
   button('Disconnect and back', W / 2, 604, 300, 46, () => { closeNet(); screen = 'menu'; });
 }
 function asPlayer(p, input, fn) {                    // run the single-player code for another player by swapping the globals it reads
@@ -1015,13 +1030,15 @@ function nearestAlive(e) {
   return b || P0;
 }
 function startOnline(mode) {
+  PVP.on = false;
   const ls = Object.values(NET.links).filter(l => l.open);
   if (!ls.length) { NET.status = 'Nobody is connected yet'; return; }
   ALL.length = 1; players = ALL; NET.on = true; NET.client = false;
   if (mode === 'story') startStory(!hasStory()); else startGame(0);
   ls.forEach((l, i) => { const p = mkPlayer(); p.sk = (meta.skin + i + 1) % SKINS.length; p.x = W / 2 + 50 * (i + 1); p.room = P0.room; p.safe = { x: p.x, y: p.y }; l.player = p; l.me = i + 1; ALL.push(p); });
   if (mode === 'story') applyView();
-  ls.forEach(l => { try { l.dc.send(JSON.stringify({ t: 'go', mode, me: l.me })); } catch (_) {} });
+  if (mode === 'pvp') pvpStart();
+  ls.forEach(l => { l.rdy = false; try { l.dc.send(JSON.stringify({ t: 'go', mode, me: l.me })); } catch (_) {} });
 }
 function leaveOnline(msg) { closeNet(); screen = 'menu'; setPaused(true); if (msg) toast = { text: msg, until: performance.now() + 3500 }; }
 function snapFor(l) {                               // each guest is sent the room THEY are in
@@ -1031,26 +1048,32 @@ function snapFor(l) {                               // each guest is sent the ro
   useRoom(keep); players = sp; return m;
 }
 function snap() {
+  const ET = [], EI = {}, BT = [], BI = {};
+  const ei = e => { const a = [e.type, e.sc, e.col, e.text, e.max, e.elite ? 1 : 0], k = JSON.stringify(a); return k in EI ? EI[k] : (EI[k] = ET.push(a) - 1); };
+  const bi = b => { const a = [b.col, b.shape, b.hl, b.hw], k = JSON.stringify(a); return k in BI ? BI[k] : (BI[k] = BT.push(a) - 1); };
   return { t: 'st', s: state, sc: score, w: wave, lv: level, st: story ? st.room : '', bn: bannerText, ba: banner, fl: flash, cs: cam.strength, co: combo, wl: wallet, wp: weapon.id, nc: nova.cd,
-    cr: crates.map(k => [k.x | 0, k.y | 0, k.hw, k.hh, k.bar ? 1 : 0]),
+    pv: PVP.on ? [PVP.s[0], PVP.s[1], PVP.over, PVP.goal] : 0, cr: crates.map(k => [k.x | 0, k.y | 0, k.hw, k.hh, k.bar ? 1 : 0]),
     pl: players.map((p, i) => [p.x | 0, p.y | 0, +p.aim.toFixed(2), p.hp, p.maxHp, +p.sx.toFixed(2), +p.sy.toFixed(2), p.inv > 0 ? 1 : 0, p.dead ? 1 : 0, +p.rotScale.toFixed(2), p.dashCd, p === P0 ? meta.skin : p.sk]),
-    en: enemies.map(e => [e.x | 0, e.y | 0, e.type, e.sc, e.col, +e.hitT.toFixed(2), +e.wind.toFixed(2), e.dying ? 1 : 0, +e.dieT.toFixed(2), e.text, e.health, e.max, e.elite ? 1 : 0, +e.animT.toFixed(2)]),
-    bu: bullets.map(b => [b.x | 0, b.y | 0, +b.rot.toFixed(2), b.col, b.shape, b.hl, b.hw]), eb: eBullets.map(b => [b.x | 0, b.y | 0]),
+    en: enemies.map(e => [e.x | 0, e.y | 0, ei(e), +e.hitT.toFixed(2), +e.wind.toFixed(2), e.dying ? 1 : 0, +e.dieT.toFixed(2), e.health, +e.animT.toFixed(2)]), et: ET,
+    bu: bullets.map(b => [b.x | 0, b.y | 0, +b.rot.toFixed(2), bi(b)]), bt: BT, eb: eBullets.map(b => [b.x | 0, b.y | 0]),
     pk: pickups.map(k => [k.x | 0, k.y | 0, +k.t.toFixed(1), k.c || 0, k.w || '', k.shade ? 1 : 0]), nv: nova.fx.map(f => [f.x | 0, f.y | 0, +f.t.toFixed(2), f.r || 0]),
     fx: fxs.map(f => [f.x | 0, f.y | 0, +f.t.toFixed(2), f.r || 0]), fa: fallers.map(f => [f.x | 0, f.y | 0, +f.t.toFixed(2)]), ev: NET.ev.splice(0) };
 }
 function applySnap(m) {
   if (!NET.client) return;
-  state = m.s; score = m.sc; wave = m.w; level = m.lv; combo = m.co; wallet = m.wl; flash = m.fl; weapon.id = m.wp; nova.cd = m.nc;
+  PVP.on = !!m.pv; if (m.pv) { PVP.s = [m.pv[0], m.pv[1]]; PVP.over = m.pv[2]; PVP.goal = m.pv[3]; }
+  state = m.s; score = m.sc; wave = m.w; level = m.lv; combo = m.co; if (!NET.shop) wallet = m.wl; flash = m.fl; weapon.id = m.wp; nova.cd = m.nc;
   cam.strength = Math.max(cam.strength, m.cs); if (m.ba > 0) { banner = m.ba; bannerText = m.bn; }
   if (m.st) { story = true; st.room = m.st; st.seen[m.st] = 1; if (NET.room_ !== m.st) { NET.room_ = m.st; buildRoom(m.st); } } else { story = false; NET.room_ = ''; rocks.length = 0; pits.length = 0; }
   crates.length = 0; m.cr.forEach(k => crates.push({ x: k[0], y: k[1], hw: k[2], hh: k[3], bar: k[4] ? true : undefined }));
   while (players.length < m.pl.length) players.push(mkPlayer());
   players.length = m.pl.length;
-  m.pl.forEach((a, i) => { Object.assign(players[i], { x: a[0], y: a[1], aim: a[2], hp: a[3], maxHp: a[4], sx: a[5], sy: a[6], inv: a[7] ? 1 : 0, dead: !!a[8], rotScale: a[9], dashCd: a[10], sk: a[11] }); });
+  m.pl.forEach((a, i) => { const h0 = players[i].hp; Object.assign(players[i], { x: a[0], y: a[1], aim: a[2], hp: a[3], maxHp: a[4], sx: a[5], sy: a[6], inv: a[7] ? 1 : 0, dead: !!a[8], rotScale: a[9], dashCd: a[10], sk: a[11] }); if (h0 > a[3] && a[3] >= 0 && h0 <= a[4] + 1) { splat(a[0], a[1], 0, 0, 12, 46, 1); for (let k = 0; k < 3; k++) { const rt = Math.random() * 6.28; addBurst(PFX.blood, () => ({ x: a[0], y: a[1], rot: rt })); } } });
   player = players[m.me >= 0 ? m.me : 0] || players[0];
-  enemies.length = 0; m.en.forEach(a => enemies.push({ x: a[0], y: a[1], type: a[2], sc: a[3], col: a[4], hitT: a[5], wind: a[6], dying: !!a[7], dieT: a[8], text: a[9], health: a[10], max: a[11], elite: !!a[12], animT: a[13], hw: 16 * a[3], hh: 24 * a[3] }));
-  bullets.length = 0; m.bu.forEach(a => bullets.push({ x: a[0], y: a[1], rot: a[2], col: a[3], shape: a[4], hl: a[5], hw: a[6] }));
+  const pd = enemies.filter(e => e.dying && e.gored); enemies.length = 0;
+  m.en.forEach(a => { const t = m.et[a[2]]; enemies.push({ x: a[0], y: a[1], type: t[0], sc: t[1], col: t[2], text: t[3], max: t[4], elite: !!t[5], hitT: a[3], wind: a[4], dying: !!a[5], dieT: a[6], health: a[7], animT: a[8], hw: 16 * t[1], hh: 24 * t[1] }); });
+  enemies.forEach(e => { if (!e.dying) return; e.gored = true; if (!pd.some(q => Math.hypot(q.x - e.x, q.y - e.y) < 40)) gore(e, { dx: 0, dy: 0 }); });   // guests see the same blood
+  bullets.length = 0; m.bu.forEach(a => { const t = m.bt[a[3]]; bullets.push({ x: a[0], y: a[1], rot: a[2], col: t[0], shape: t[1], hl: t[2], hw: t[3] }); });
   eBullets.length = 0; m.eb.forEach(a => eBullets.push({ x: a[0], y: a[1] }));
   pickups.length = 0; m.pk.forEach(a => pickups.push({ x: a[0], y: a[1], t: a[2], c: a[3] || undefined, w: a[4] || undefined, shade: !!a[5] }));
   nova.fx.length = 0; m.nv.forEach(a => nova.fx.push({ x: a[0], y: a[1], t: a[2], r: a[3] || undefined }));
@@ -1074,6 +1097,54 @@ function netTick() {                                 // 30 times a second: host 
   for (let i = ALL.length - 1; i >= 1; i--) { const l = ls.find(x => x.player === ALL[i]); if (l && !l.open) ALL.splice(i, 1); }
   for (const l of ls) if (l.open && l.player) try { l.dc.send(JSON.stringify(snapFor(l))); } catch (_) {}
 }
+NET.ban = {}; NET.chat = []; NET.rdy = false;
+const hostLink = () => Object.values(NET.links).find(x => x.open);
+function chatAdd(n, m) { NET.chat.push({ n, m, t: performance.now() }); if (NET.chat.length > 30) NET.chat.shift(); }
+function relayChat(n, m, skip) { for (const k in NET.links) { const l = NET.links[k]; if (l.open && l !== skip) try { l.dc.send(JSON.stringify({ t: 'chat', n, m })); } catch (_) {} } }
+function sendChat(m) {
+  m = String(m || '').trim().slice(0, 80); if (!m) return;
+  if (!NET.host) { chatAdd(NET.name || 'Me', m); const l = hostLink(); if (l) try { l.dc.send(JSON.stringify({ t: 'chat', m })); } catch (_) {} return; }
+  chatAdd(NET.name || 'Host', m); relayChat(NET.name || 'Host', m, null);
+}
+function setReady(v) { NET.rdy = !!v; const l = hostLink(); if (l) try { l.dc.send(JSON.stringify({ t: 'rdy', v: NET.rdy })); } catch (_) {} }
+function kickLink(l) {
+  NET.ban[l.id] = 1; try { l.dc.send(JSON.stringify({ t: 'kick' })); } catch (_) {}
+  const i = ALL.indexOf(l.player); if (i > 0) ALL.splice(i, 1);
+  delete NET.links[l.id]; setTimeout(() => { try { l.pc.close(); } catch (_) {} }, 200);
+}
+async function chatUI() { const v = await showModal('Chat', [{ id: 'm', label: 'Message to the room', max: 80 }], 'Send'); if (v) sendChat(v.m); }
+function drawChat(x, y, fade) {
+  const now = performance.now(), L = NET.chat.filter(c => !fade || now - c.t < 9000).slice(-4);
+  ctx.save(); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '14px ' + UI_FONT;
+  L.forEach((c, i) => { ctx.globalAlpha = fade ? Math.min(1, (9000 - (now - c.t)) / 1500) : 1; ctx.fillStyle = COLOR.gun; ctx.fillText(c.n + ': ' + c.m, x, y + i * 16, 260); });
+  ctx.restore();
+}
+const PVP = { on: false, s: [0, 0], goal: 5, over: 0, t: 0 }, TEAMC = ['#ca6702', '#0a9396'], TEAMN = ['ORANGE', 'TEAL'];
+const teamOf = p => Math.max(0, players.indexOf(p)) % 2;
+function pvpSpawn(p, i) { const t = i % 2; Object.assign(p, { x: t ? 950 : 200, y: H / 2 + (i < 2 ? -60 : 60), hp: 5, maxHp: 5, dead: false, rt: undefined, inv: 1.5 }); p.safe = { x: p.x, y: p.y }; }
+function pvpStart() { PVP.on = true; PVP.s = [0, 0]; PVP.over = 0; enemies.length = 0; bullets.length = 0; state = 'play'; ALL.forEach((p, i) => pvpSpawn(p, i)); }
+function pvpHit(q, o) {
+  if (q.inv > 0 || q.dead || PVP.over) return;
+  q.hp--; q.inv = 0.7; play('hit'); splat(q.x, q.y, 0, 0, 10, 40, 1);
+  if (q.hp > 0) return;
+  q.dead = true; q.hp = 0; q.rt = 3; const t = teamOf(o); PVP.s[t]++;
+  if (PVP.s[t] >= PVP.goal) { PVP.over = t + 1; PVP.t = 5; bannerText = TEAMN[t] + ' TEAM WINS'; banner = 4; }
+}
+function pvpStep(dt) {
+  for (let i = bullets.length - 1; i >= 0; i--) { const b = bullets[i]; if (!b.own) continue; const t = teamOf(b.own); for (const q of players) if (!q.dead && teamOf(q) !== t && Math.hypot(b.x - q.x, b.y - q.y) < 20) { pvpHit(q, b.own); bullets.splice(i, 1); break; } }
+  players.forEach((p, i) => { if (p.dead && p.rt !== undefined && (p.rt -= dt) <= 0 && !PVP.over) pvpSpawn(p, i); });
+  if (PVP.over && (PVP.t -= dt) <= 0) pvpStart();
+}
+function drawPvp() {
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '700 24px ' + UI_FONT;
+  ctx.fillStyle = TEAMC[0]; ctx.fillText(PVP.s[0], W / 2 - 60, 38); ctx.fillStyle = TEAMC[1]; ctx.fillText(PVP.s[1], W / 2 + 60, 38);
+  ctx.fillStyle = COLOR.gun; ctx.font = '14px ' + UI_FONT; ctx.fillText('first to ' + PVP.goal + (PVP.over ? '' : '   you: ' + TEAMN[teamOf(player)]), W / 2, 38); ctx.restore();
+}
+// ---- merchant for guests: the host's wallet and shop are shown to the guest, and every purchase is sent back
+function endShop() { if (!NET.shop) return; const r = JSON.parse(NET.shop); NET.shop = null; Object.keys(meta).forEach(k => delete meta[k]); Object.assign(meta, r); }
+const _openTrade0 = openTrade;
+openTrade = function () { if (NET.client) { const l = hostLink(); if (l) try { l.dc.send(JSON.stringify({ t: 'trade' })); } catch (_) {} return; } _openTrade0(); };
+const _render0 = render; render = function () { _render0(); if (NET.shop && screen !== 'shop') endShop(); if (PVP.on && screen === 'game') drawPvp(); if (screen === 'game' && NET.on) drawChat(72, 600, true); else if (screen === 'online') drawChat(16, 150, false); };
 function clientUpdate(dt) { updateParticles(dt); updateCamera(dt); }
 function drawWait() {
   ctx.fillStyle = 'rgba(0,18,25,0.78)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1191,7 +1262,7 @@ try {
 if (NET.relayApp && NET.relayApp.charAt(0) !== '[') loadRelay();                                   // refresh the credentials in the background
 function addLate(l) {                                // someone joined a game that is already running
   const p = mkPlayer(); p.sk = (meta.skin + ALL.length) % SKINS.length; p.room = P0.room; p.x = P0.x + rand(-40, 40); p.y = P0.y + rand(-40, 40); p.safe = { x: p.x, y: p.y };
-  l.player = p; ALL.push(p); try { l.dc.send(JSON.stringify({ t: 'go', mode: story ? 'story' : 'arcade', me: ALL.length - 1 })); } catch (_) {}
+  l.player = p; ALL.push(p); if (PVP.on) pvpSpawn(p, ALL.length - 1); try { l.dc.send(JSON.stringify({ t: 'go', mode: story ? 'story' : 'arcade', me: ALL.length - 1 })); } catch (_) {}
 }
 function drawRooms() {
   const now = performance.now();
@@ -1235,7 +1306,7 @@ const ACH = [
   { id: 'lvl10', n: 'Veteran', d: 'Complete level 10' }, { id: 'lvl30', n: 'Champion', d: 'Complete level 30' }, { id: 'rich', n: 'Rich', d: 'Hold 500 coins' },
   { id: 'nova', n: 'Shockwave', d: 'Use the Nova ability' }, { id: 'elite', n: 'Elite hunter', d: 'Defeat a glowing elite' }, { id: 'arsenal', n: 'Arsenal', d: 'Own all 5 weapons' }, { id: 'story', n: 'Core Keeper', d: 'Finish the story' }
 ];
-function saveMeta() { try { localStorage.setItem('tds_meta', JSON.stringify({ wallet, meta, ach, tut: tutStep >= 3 })); } catch (_) {} }
+function saveMeta() { if (NET.shop) { const l = hostLink(); if (l) try { l.dc.send(JSON.stringify({ t: 'shop', m: meta, w: wallet })); } catch (_) {} return; } try { localStorage.setItem('tds_meta', JSON.stringify({ wallet, meta, ach, tut: tutStep >= 3 })); } catch (_) {} }
 function award(id) {
   if (ach[id]) return;
   ach[id] = 1; toast = { text: 'Achievement: ' + ACH.find(a => a.id === id).n, until: performance.now() + 3500 };
@@ -1392,7 +1463,7 @@ function shoot() {
   const W_ = WEAPONS[weapon.id], cnt = W_.n + Math.min(perks.multi, 6);
   for (let k = 0; k < cnt; k++) {
     const a = player.aim + (k - (cnt - 1) / 2) * (W_.n > 1 ? 0.1 : 0.16) + (W_.n === 1 ? rand(-W_.spread, W_.spread) : 0), ca = Math.cos(a), sa = Math.sin(a);
-    bullets.push({ x: player.x + ca * W_.mz, y: player.y + sa * W_.mz, dx: ca, dy: sa, rot: a, pierce: Math.max(Math.min(perks.pierce, 8), W_.pierce), hit: [], dm: W_.dm, sp: W_.sp, hl: W_.hl, hw: W_.hw, col: W_.col, shape: W_.shape });
+    bullets.push({ x: player.x + ca * W_.mz, y: player.y + sa * W_.mz, dx: ca, dy: sa, rot: a, pierce: Math.max(Math.min(perks.pierce, 8), W_.pierce), hit: [], dm: W_.dm, sp: W_.sp, hl: W_.hl, hw: W_.hw, col: W_.col, shape: W_.shape, own: player });
   }
   player.shotT = 0;
   if (tutStep === 1) tutStep = 2;
@@ -1576,7 +1647,7 @@ function updateEnemies(dt) {
     pushOut(e, e.hw, e.hh);
     e.y = clamp(e.y, ARENA.t + e.hh, ARENA.b - e.hh);
   }
-  if (enemies.length === 0 && !story) {
+  if (enemies.length === 0 && !story && !PVP.on) {
     if (wave >= LEVELS[level % 30].waves) levelClear();
     else if (wave > 0 && !offered) offerUpgrade();
     else { waveT -= dt; if (waveT <= 0) { spawnWave(); waveT = 1.5; } }
@@ -1713,6 +1784,7 @@ function drawPlayer() {
   ctx.save();
   if (player.inv > 0 && Math.floor(player.inv * 16) % 2 === 0) ctx.globalAlpha = 0.35;   // blink while invulnerable
   ctx.translate(player.x, player.y);
+  if (PVP.on) { ctx.beginPath(); ctx.arc(0, 0, 26, 0, 7); ctx.lineWidth = 3; ctx.strokeStyle = TEAMC[teamOf(player)]; ctx.stroke(); }
   ctx.save();
   ctx.scale(player.sx, player.sy);
   const sk = SKINS[player.sk !== undefined ? player.sk : meta.skin].c;
@@ -1846,7 +1918,7 @@ function render() {
   finishUI();
 }
 
-const BUILD = 'build 8 - relay support';
+const BUILD = 'build 10 - pvp and guest shop';
 function finishUI() {
   if (screen === 'menu') { ctx.font = '12px ' + UI_FONT; ctx.fillStyle = 'rgba(233,216,166,0.4)'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(BUILD, 14, H - 12); }
   if (toast && performance.now() < toast.until) {
