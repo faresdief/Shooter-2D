@@ -1010,7 +1010,7 @@ function drawOnline() {
   const op = Object.values(NET.links).filter(l => l.open);
   if (NET.host && op.length) {
     op.forEach((l, i) => button('Kick', W / 2 + 290, 418 + i * 34, 70, 28, () => kickLink(l)));
-    if (op.every(l => l.rdy)) { button('Arcade', W / 2 - 240, 548, 220, 44, () => startOnline('arcade'), 'primary'); button('Story', W / 2, 548, 220, 44, () => startOnline('story'), 'primary'); button(op.length % 2 ? 'PvP ' + ((op.length + 1) >> 1) + 'v' + ((op.length + 1) >> 1) : 'PvP (2 or 4 players)', W / 2 + 240, 548, 220, 44, () => { if (op.length % 2) startOnline('pvp'); else NET.status = 'PvP needs 2 or 4 players'; }, op.length % 2 ? 'primary' : ''); }
+    if (op.every(l => l.rdy)) { button('Arcade', W / 2 - 330, 548, 200, 44, () => startOnline('arcade'), 'primary'); button('Endless', W / 2 - 110, 548, 200, 44, () => startOnline('endless'), 'primary'); button('Story', W / 2 + 110, 548, 200, 44, () => startOnline('story'), 'primary'); button(op.length % 2 ? 'PvP ' + ((op.length + 1) >> 1) + 'v' + ((op.length + 1) >> 1) : 'PvP (2 or 4)', W / 2 + 330, 548, 200, 44, () => { if (op.length % 2) startOnline('pvp'); else NET.status = 'PvP needs 2 or 4 players'; }, op.length % 2 ? 'primary' : ''); }
     else { ctx.fillStyle = COLOR.gun; ctx.font = '18px ' + UI_FONT; ctx.fillText('Waiting for everyone to press Ready (' + op.filter(l => l.rdy).length + '/' + op.length + ')', W / 2, 568); }
   } else if (!NET.host && op.length) button(NET.rdy ? 'Ready  (tap to cancel)' : "I'm ready", W / 2, 548, 300, 44, () => setReady(!NET.rdy), NET.rdy ? 'on' : 'primary');
   if (op.length) button('Chat', W / 2 + 260, 604, 140, 46, chatUI);
@@ -1039,6 +1039,7 @@ function startOnline(mode) {
   ls.forEach((l, i) => { const p = mkPlayer(); p.sk = (meta.skin + i + 1) % SKINS.length; p.x = W / 2 + 50 * (i + 1); p.room = P0.room; p.safe = { x: p.x, y: p.y }; l.player = p; l.me = i + 1; ALL.push(p); });
   if (mode === 'story') applyView();
   if (mode === 'pvp') pvpStart();
+  if (mode === 'endless') endless = true;
   ls.forEach(l => { l.rdy = false; try { l.dc.send(JSON.stringify({ t: 'go', mode, me: l.me })); } catch (_) {} });
 }
 function leaveOnline(msg) { closeNet(); screen = 'menu'; setPaused(true); if (msg) toast = { text: msg, until: performance.now() + 3500 }; }
@@ -1154,6 +1155,23 @@ function predictMove(dt) {
 // ---- endless mode: waves never end, every 3rd wave the level (and so the difficulty) goes up, a boss every 10 waves
 let endless = false;
 function startEndless() { startGame(0); endless = true; }
+let bestEndless = 0; try { bestEndless = +localStorage.getItem('tds_endless') || 0; } catch (_) {}
+function endlessMark() {
+  if (wave > bestEndless) { bestEndless = wave; try { localStorage.setItem('tds_endless', String(wave)); } catch (_) {} }
+  [10, 20, 30].forEach(n => { if (wave >= n) award('e' + n); });
+}
+// ---- weapon levels: every hit trains the weapon in your hand; each level adds 8% damage (max level 5)
+const wlvl = id => Math.min(5, Math.floor(Math.sqrt(((meta.wx || {})[id] || 0) / 100)));
+function wxp() {
+  const id = weapon.id; meta.wx = meta.wx || {}; const l0 = wlvl(id), v = meta.wx[id] = (meta.wx[id] || 0) + 1;
+  if (wlvl(id) > l0) { toast = { text: id[0].toUpperCase() + id.slice(1) + ' reached level ' + wlvl(id), until: performance.now() + 3000 }; blip(700, 0.2, 'triangle'); saveMeta(); } else if (v % 50 === 0) saveMeta();
+}
+// ---- phone aim assist: nudges the aim toward an enemy that is already almost in the line of fire
+function assistAim() {
+  let best = null, bd = 520;
+  for (const e of enemies) { if (e.dying) continue; const dx = e.x - player.x, dy = e.y - player.y, d = Math.hypot(dx, dy); if (d > bd) continue; let da = Math.atan2(dy, dx) - player.aim; da = Math.atan2(Math.sin(da), Math.cos(da)); if (Math.abs(da) < 0.35) { best = da; bd = d; } }
+  if (best !== null) player.aim += best * 0.5;
+}
 // ---- merchant for guests: the host's wallet and shop are shown to the guest, and every purchase is sent back
 function endShop() { if (!NET.shop) return; const r = JSON.parse(NET.shop); NET.shop = null; Object.keys(meta).forEach(k => delete meta[k]); Object.assign(meta, r); }
 const _openTrade0 = openTrade;
@@ -1318,7 +1336,7 @@ const ACH = [
   { id: 'first', n: 'First blood', d: 'Defeat your first enemy' }, { id: 'combo5', n: 'On a roll', d: 'Reach a x5 combo' },
   { id: 'boss', n: 'Boss slayer', d: 'Defeat a boss' }, { id: 'mega', n: 'Giant killer', d: 'Defeat a giant boss' },
   { id: 'lvl10', n: 'Veteran', d: 'Complete level 10' }, { id: 'lvl30', n: 'Champion', d: 'Complete level 30' }, { id: 'rich', n: 'Rich', d: 'Hold 500 coins' },
-  { id: 'nova', n: 'Shockwave', d: 'Use the Nova ability' }, { id: 'elite', n: 'Elite hunter', d: 'Defeat a glowing elite' }, { id: 'arsenal', n: 'Arsenal', d: 'Own all 5 weapons' }, { id: 'story', n: 'Core Keeper', d: 'Finish the story' }
+  { id: 'nova', n: 'Shockwave', d: 'Use the Nova ability' }, { id: 'elite', n: 'Elite hunter', d: 'Defeat a glowing elite' }, { id: 'arsenal', n: 'Arsenal', d: 'Own all 5 weapons' }, { id: 'e10', n: 'Endless 10', d: 'Reach wave 10 in Endless' }, { id: 'e20', n: 'Endless 20', d: 'Reach wave 20 in Endless' }, { id: 'e30', n: 'Endless 30', d: 'Reach wave 30 in Endless' }, { id: 'story', n: 'Core Keeper', d: 'Finish the story' }
 ];
 function saveMeta() { if (NET.shop) { const l = hostLink(); if (l) try { l.dc.send(JSON.stringify({ t: 'shop', m: meta, w: wallet })); } catch (_) {} return; } try { localStorage.setItem('tds_meta', JSON.stringify({ wallet, meta, ach, tut: tutStep >= 3 })); } catch (_) {} }
 function award(id) {
@@ -1443,7 +1461,7 @@ function reset() {
 }
 function hurtPlayer() {
   if (player.inv > 0 || player.dashT > 0 || state !== 'play') return;
-  player.hp--; player.inv = 1; flash = 0.5; cam.strength = 14; play('hit');
+  player.hp--; player.inv = 1; flash = 0.5; cam.strength = 14; play('hit'); if (!NET.on) freeze = Math.max(freeze, 0.07);
   splat(player.x, player.y, 0, 0, 12, 46, 1); blob(player.x, player.y + 10, 12, 0.6);
   for (let k = 0; k < 3; k++) { const rt = Math.random() * 6.28; addBurst(PFX.blood, () => ({ x: player.x, y: player.y, rot: rt })); }
   if (navigator.vibrate) navigator.vibrate(40);
@@ -1514,7 +1532,7 @@ function updatePlayer(dt) {
 
   // aim every frame (the Godot version only updated on mouse motion, so aim went stale while walking)
   if (pa) player.aim = Math.atan2(pa.y, pa.x);
-  else if (settings.mode === 'phone') { if (stick.aim) player.aim = Math.atan2(stick.aim.y, stick.aim.x); }
+  else if (settings.mode === 'phone') { if (stick.aim) { player.aim = Math.atan2(stick.aim.y, stick.aim.x); assistAim(); } }
   else { const m = mouseWorld(); player.aim = Math.atan2(m.y - player.y, m.x - player.x); }
 
   player.cooldown = Math.max(0, player.cooldown - dt);
@@ -1570,7 +1588,7 @@ const ENEMY_HALF_W = 16, ENEMY_HALF_H = 24, ENEMY_STOP_DIST = 46, ENEMY_MIN_GAP 
 const HIT_LEN = 0.2, DEATH_DELAY = 0.2, DEATH_LEN = 0.2;
 
 function spawnWave() {
-  wave++; banner = 2; offered = false; if (endless && wave > 3 && wave % 3 === 1) level++;
+  wave++; banner = 2; offered = false; if (endless) { endlessMark(); if (wave > 3 && wave % 3 === 1) level++; }
   players.forEach(q => { if (q.dead) { q.dead = false; q.hp = Math.max(3, q.hp); q.inv = 2; } });
   const isMega = level % 10 === 9 && wave === LEVELS[level % 30].waves, tier = Math.floor(level / 10);
   bannerText = isMega ? 'Boss: ' + ['The Colossus', 'The Warden', 'The Overlord'][tier % 3] : wave === 1 ? 'Level ' + (level + 1) + ': ' + LEVELS[level % 30].name : 'Wave ' + wave;
@@ -1589,7 +1607,8 @@ function spawnWave() {
 }
 
 function hitEnemy(e, bullet) {
-  const dmg = Math.round((CFG.bulletDamage + 10 * perks.heavy + 5 * meta.dmg) * (bullet.dm || 1));
+  const dmg = Math.round((CFG.bulletDamage + 10 * perks.heavy + 5 * meta.dmg) * (bullet.dm || 1) * (1 + 0.08 * wlvl(weapon.id)));
+  wxp();
   e.health -= dmg;
   e.text = String(dmg);
   e.hitT = 0;
@@ -1606,7 +1625,8 @@ function updateEnemies(dt) {
     if (e.hitT < HIT_LEN) e.hitT += dt;
     if (e.dying) {                                // frozen, can't be hit again, vanishes after hit flash + death flicker
       e.dieT += dt;
-      if (e.dieT >= DEATH_DELAY + DEATH_LEN) { enemies.splice(i, 1); cam.strength = e.type === 'boss' || e.type === 'mega' ? 30 : CFG.shakeStrength; onKill(); dropLoot(e); }
+      if (e.dieT >= DEATH_DELAY + DEATH_LEN) { enemies.splice(i, 1); cam.strength = e.type === 'boss' || e.type === 'mega' ? 30 : CFG.shakeStrength; onKill();
+        { const big = e.type === 'boss' || e.type === 'mega'; if (!NET.on && (big || e.elite || e.type === 'tank')) freeze = big ? 0.2 : 0.09; if (big) blip(70, 0.7, 'sawtooth'); } dropLoot(e); }
       continue;
     }
     e.animT = (e.animT + dt) % 0.4;
@@ -1932,7 +1952,7 @@ function render() {
   finishUI();
 }
 
-const BUILD = 'build 11 - endless and prediction';
+const BUILD = 'build 12 - weapon levels and endless record';
 function finishUI() {
   if (screen === 'menu') { ctx.font = '12px ' + UI_FONT; ctx.fillStyle = 'rgba(233,216,166,0.4)'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(BUILD, 14, H - 12); }
   if (toast && performance.now() < toast.until) {
@@ -1980,7 +2000,7 @@ function drawMenu() {
   button('Achievements  ' + Object.keys(ach).length + '/' + ACH.length, W / 2, 496, 340, 44, () => { screen = 'ach'; });
   button('Settings', W / 2, 548, 340, 44, openSettings);
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = 'rgba(233,216,166,0.6)'; ctx.font = '16px ' + UI_FONT;
-  ctx.fillText('Controls: ' + (settings.mode === 'pc' ? 'Computer' : 'Phone') + (best ? '     Best score: ' + best : ''), W / 2, 616);
+  ctx.fillText('Controls: ' + (settings.mode === 'pc' ? 'Computer' : 'Phone') + (best ? '     Best score: ' + best : '') + (bestEndless ? '     Endless: wave ' + bestEndless : ''), W / 2, 616);
   rr(36, 250, 300, 170, 16); ctx.fillStyle = 'rgba(0,31,44,0.85)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,147,148,0.5)'; ctx.stroke();
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = COLOR.gun; ctx.font = '600 17px ' + UI_FONT; ctx.fillText('Daily missions', 56, 284);
   MIS.forEach((m, i) => {
@@ -2038,8 +2058,8 @@ function drawAch() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = COLOR.ground; ctx.font = '700 40px ' + UI_FONT; ctx.fillText('Achievements', W / 2, 96);
   ACH.forEach((a, i) => {
-    const y = 140 + i * 40, got = ach[a.id];
-    rr(W / 2 - 340, y - 18, 680, 36, 12); ctx.fillStyle = got ? 'rgba(10,147,148,0.4)' : 'rgba(10,147,148,0.1)'; ctx.fill();
+    const st2 = Math.min(40, 440 / ACH.length), y = 140 + i * st2, got = ach[a.id];
+    rr(W / 2 - 340, y - Math.min(36, st2 - 4) / 2, 680, Math.min(36, st2 - 4), 12); ctx.fillStyle = got ? 'rgba(10,147,148,0.4)' : 'rgba(10,147,148,0.1)'; ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = got ? '#ee9b00' : 'rgba(10,147,148,0.5)'; ctx.stroke();
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = got ? COLOR.ground : 'rgba(233,216,166,0.5)';
     ctx.font = '600 20px ' + UI_FONT; ctx.fillText(a.n, W / 2 - 316, y); ctx.font = '16px ' + UI_FONT; ctx.fillText(a.d, W / 2 - 150, y);
