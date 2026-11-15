@@ -199,6 +199,7 @@ function touchDown(e) {
   const p = toLogical(e);
   let role = p.x < W / 2 ? 'move' : 'aim';
   if (Math.hypot(p.x - DASH_BTN.x, p.y - DASH_BTN.y) < DASH_BTN.r + 16) role = 'dash';
+  else if (NET.on && Math.hypot(p.x - (W - 92), p.y - 30) < 26) { chatUI(); return; }
   else if (Math.hypot(p.x - (W - 40), p.y - 30) < 30) { setPaused(true); return; }
   else if (Math.hypot(p.x - NOVA_BTN.x, p.y - NOVA_BTN.y) < 56) { useNova(); return; }
   else if (nearMerchant() && Math.hypot(p.x - W / 2, p.y - 520) < 110) { openTrade(); return; }
@@ -221,7 +222,7 @@ function touchUp(e) {
   if (s.role === 'dash') stick.dash = false; else if (s.role === 'move') stick.move = null; else stick.fire = false;
 }
 function startGame(i, keep) {
-  PVP.on = false;
+  PVP.on = false; endless = false;
   const sc = score, pk = Object.assign({}, perks), mh = player.maxHp;
   story = false; daily = false; players = ALL; level = i || 0; reset();
   if (keep) { score = sc; Object.assign(perks, pk); player.maxHp = mh; }
@@ -1068,7 +1069,7 @@ function applySnap(m) {
   crates.length = 0; m.cr.forEach(k => crates.push({ x: k[0], y: k[1], hw: k[2], hh: k[3], bar: k[4] ? true : undefined }));
   while (players.length < m.pl.length) players.push(mkPlayer());
   players.length = m.pl.length;
-  m.pl.forEach((a, i) => { const h0 = players[i].hp; Object.assign(players[i], { x: a[0], y: a[1], aim: a[2], hp: a[3], maxHp: a[4], sx: a[5], sy: a[6], inv: a[7] ? 1 : 0, dead: !!a[8], rotScale: a[9], dashCd: a[10], sk: a[11] }); if (h0 > a[3] && a[3] >= 0 && h0 <= a[4] + 1) { splat(a[0], a[1], 0, 0, 12, 46, 1); for (let k = 0; k < 3; k++) { const rt = Math.random() * 6.28; addBurst(PFX.blood, () => ({ x: a[0], y: a[1], rot: rt })); } } });
+  m.pl.forEach((a, i) => { const h0 = players[i].hp, px = players[i].x, py = players[i].y; Object.assign(players[i], { x: a[0], y: a[1], aim: a[2], hp: a[3], maxHp: a[4], sx: a[5], sy: a[6], inv: a[7] ? 1 : 0, dead: !!a[8], rotScale: a[9], dashCd: a[10], sk: a[11] }); if (i === m.me && PRED.on && !players[i].dead) { const ex = players[i].x - px, ey = players[i].y - py; if (Math.hypot(ex, ey) < 90) { players[i].x = px + ex * 0.35; players[i].y = py + ey * 0.35; } } if (h0 > a[3] && a[3] >= 0 && h0 <= a[4] + 1) { splat(a[0], a[1], 0, 0, 12, 46, 1); for (let k = 0; k < 3; k++) { const rt = Math.random() * 6.28; addBurst(PFX.blood, () => ({ x: a[0], y: a[1], rot: rt })); } } });
   player = players[m.me >= 0 ? m.me : 0] || players[0];
   const pd = enemies.filter(e => e.dying && e.gored); enemies.length = 0;
   m.en.forEach(a => { const t = m.et[a[2]]; enemies.push({ x: a[0], y: a[1], type: t[0], sc: t[1], col: t[2], text: t[3], max: t[4], elite: !!t[5], hitT: a[3], wind: a[4], dying: !!a[5], dieT: a[6], health: a[7], animT: a[8], hw: 16 * t[1], hh: 24 * t[1] }); });
@@ -1140,12 +1141,25 @@ function drawPvp() {
   ctx.fillStyle = TEAMC[0]; ctx.fillText(PVP.s[0], W / 2 - 60, 38); ctx.fillStyle = TEAMC[1]; ctx.fillText(PVP.s[1], W / 2 + 60, 38);
   ctx.fillStyle = COLOR.gun; ctx.font = '14px ' + UI_FONT; ctx.fillText('first to ' + PVP.goal + (PVP.over ? '' : '   you: ' + TEAMN[teamOf(player)]), W / 2, 38); ctx.restore();
 }
+const PRED = { on: true };
+function predictMove(dt) {
+  const p = player; if (!PRED.on || !p || p.dead || state !== 'play' || paused || screen !== 'game') return;
+  let ix = (held.has('KeyD') || held.has('ArrowRight') ? 1 : 0) - (held.has('KeyA') || held.has('ArrowLeft') ? 1 : 0), iy = (held.has('KeyS') || held.has('ArrowDown') ? 1 : 0) - (held.has('KeyW') || held.has('ArrowUp') ? 1 : 0);
+  let len = Math.hypot(ix, iy); if (stick.move) { ix = stick.move.x; iy = stick.move.y; len = 1; }
+  if (!len) return;
+  p.x += ix / len * CFG.playerSpeed * dt; p.y += iy / len * CFG.playerSpeed * dt;
+  p.x = clamp(p.x, ARENA.l + PLAYER_HALF_W, ARENA.r - PLAYER_HALF_W); p.y = clamp(p.y, ARENA.t + PLAYER_HALF_H, ARENA.b - PLAYER_HALF_H);
+  pushOut(p, PLAYER_HALF_W - 4, PLAYER_HALF_H - 4);
+}
+// ---- endless mode: waves never end, every 3rd wave the level (and so the difficulty) goes up, a boss every 10 waves
+let endless = false;
+function startEndless() { startGame(0); endless = true; }
 // ---- merchant for guests: the host's wallet and shop are shown to the guest, and every purchase is sent back
 function endShop() { if (!NET.shop) return; const r = JSON.parse(NET.shop); NET.shop = null; Object.keys(meta).forEach(k => delete meta[k]); Object.assign(meta, r); }
 const _openTrade0 = openTrade;
 openTrade = function () { if (NET.client) { const l = hostLink(); if (l) try { l.dc.send(JSON.stringify({ t: 'trade' })); } catch (_) {} return; } _openTrade0(); };
-const _render0 = render; render = function () { _render0(); if (NET.shop && screen !== 'shop') endShop(); if (PVP.on && screen === 'game') drawPvp(); if (screen === 'game' && NET.on) drawChat(72, 600, true); else if (screen === 'online') drawChat(16, 150, false); };
-function clientUpdate(dt) { updateParticles(dt); updateCamera(dt); }
+const _render0 = render; render = function () { _render0(); if (NET.shop && screen !== 'shop') endShop(); if (PVP.on && screen === 'game') drawPvp(); if (NET.on && screen === 'game' && settings.mode === 'phone') { ctx.save(); ctx.fillStyle = 'rgba(0,18,25,0.35)'; ctx.beginPath(); ctx.arc(W - 92, 30, 20, 0, 7); ctx.fill(); ctx.fillStyle = COLOR.gun; ctx.font = '600 12px ' + UI_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Chat', W - 92, 31); ctx.restore(); } if (screen === 'game' && NET.on) drawChat(72, 600, true); else if (screen === 'online') drawChat(16, 150, false); };
+function clientUpdate(dt) { predictMove(dt); updateParticles(dt); updateCamera(dt); }
 function drawWait() {
   ctx.fillStyle = 'rgba(0,18,25,0.78)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = COLOR.ground; ctx.font = '600 30px ' + UI_FONT; ctx.fillText('The host is choosing...', W / 2, 300);
@@ -1556,7 +1570,7 @@ const ENEMY_HALF_W = 16, ENEMY_HALF_H = 24, ENEMY_STOP_DIST = 46, ENEMY_MIN_GAP 
 const HIT_LEN = 0.2, DEATH_DELAY = 0.2, DEATH_LEN = 0.2;
 
 function spawnWave() {
-  wave++; banner = 2; offered = false;
+  wave++; banner = 2; offered = false; if (endless && wave > 3 && wave % 3 === 1) level++;
   players.forEach(q => { if (q.dead) { q.dead = false; q.hp = Math.max(3, q.hp); q.inv = 2; } });
   const isMega = level % 10 === 9 && wave === LEVELS[level % 30].waves, tier = Math.floor(level / 10);
   bannerText = isMega ? 'Boss: ' + ['The Colossus', 'The Warden', 'The Overlord'][tier % 3] : wave === 1 ? 'Level ' + (level + 1) + ': ' + LEVELS[level % 30].name : 'Wave ' + wave;
@@ -1564,7 +1578,7 @@ function spawnWave() {
   const n = isMega ? 3 : Math.min(1 + wave + Math.floor(level / 2), 11), speed = Math.min(CFG.enemySpeed + wave * 14 + level * 6, 200), hp = CFG.enemyHealth + Math.floor(wave / 3) * 30 + level * 14;
   for (let i = 0; i < n; i++) {
     let x, y, tries = 0;
-    const r = (daily ? srnd() : Math.random()), type = wave === LEVELS[level % 30].waves && i === 0 ? (isMega ? 'mega' : 'boss') : level >= 2 && r < 0.18 ? 'tank' : level >= 1 && r < 0.43 ? 'runner' : level >= 3 && r > 0.8 ? 'shooter' : level >= 5 && r > 0.7 ? 'bomber' : level >= 2 && r > 0.6 ? 'splitter' : 'grunt', T = TYPES[type], EL = level >= 3 && type !== 'mega' && type !== 'boss' && (daily ? srnd() : Math.random()) < 0.12, HP = Math.round((type === 'mega' ? 2200 + tier * 1400 : hp * T.hp) * DIFF[settings.diff].hp);
+    const r = (daily ? srnd() : Math.random()), type = (wave === LEVELS[level % 30].waves || (endless && wave % 10 === 0)) && i === 0 ? (isMega ? 'mega' : 'boss') : level >= 2 && r < 0.18 ? 'tank' : level >= 1 && r < 0.43 ? 'runner' : level >= 3 && r > 0.8 ? 'shooter' : level >= 5 && r > 0.7 ? 'bomber' : level >= 2 && r > 0.6 ? 'splitter' : 'grunt', T = TYPES[type], EL = level >= 3 && type !== 'mega' && type !== 'boss' && (daily ? srnd() : Math.random()) < 0.12, HP = Math.round((type === 'mega' ? 2200 + tier * 1400 : hp * T.hp) * DIFF[settings.diff].hp);
     do { x = srand(100, 1000); y = srand(150, 500); }
     while (Math.hypot(x - player.x, y - player.y) < 220 && ++tries < 30);   // never spawn on top of the player
     enemies.push({
@@ -1648,7 +1662,7 @@ function updateEnemies(dt) {
     e.y = clamp(e.y, ARENA.t + e.hh, ARENA.b - e.hh);
   }
   if (enemies.length === 0 && !story && !PVP.on) {
-    if (wave >= LEVELS[level % 30].waves) levelClear();
+    if (!endless && wave >= LEVELS[level % 30].waves) levelClear();
     else if (wave > 0 && !offered) offerUpgrade();
     else { waveT -= dt; if (waveT <= 0) { spawnWave(); waveT = 1.5; } }
   }
@@ -1918,7 +1932,7 @@ function render() {
   finishUI();
 }
 
-const BUILD = 'build 10 - pvp and guest shop';
+const BUILD = 'build 11 - endless and prediction';
 function finishUI() {
   if (screen === 'menu') { ctx.font = '12px ' + UI_FONT; ctx.fillStyle = 'rgba(233,216,166,0.4)'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(BUILD, 14, H - 12); }
   if (toast && performance.now() < toast.until) {
@@ -1959,7 +1973,7 @@ function drawMenu() {
   ctx.fillStyle = COLOR.ground; ctx.font = '800 72px ' + UI_FONT; ctx.fillText('Top Down Shooter', W / 2, 150);
   ctx.fillStyle = COLOR.gun; ctx.font = '21px ' + UI_FONT; ctx.fillText('Hold the arena. Survive every wave.', W / 2, 192);
   button('Story mode', W / 2, 236, 340, 44, openStory, 'primary');
-  button('Arcade', W / 2, 288, 340, 44, () => { screen = 'levels'; }, 'primary');
+  button('Arcade', W / 2, 288, 340, 44, () => { screen = 'levels'; }, 'primary'); button('Endless', W / 2 + 255, 288, 130, 44, startEndless);
   button('Online', W / 2, 340, 340, 44, openOnline, 'primary');
   button('Daily challenge' + (dailyBest ? '  ·  ' + dailyBest : ''), W / 2, 392, 340, 44, startDaily);
   button('Shop  ·  ' + wallet + ' coins', W / 2, 444, 340, 44, () => { screen = 'shop'; });
