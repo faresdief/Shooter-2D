@@ -33,6 +33,37 @@
 <canvas id="game" width="1152" height="648"></canvas>
 <div id="rot"><div style="font-size:60px">&#8635;</div><div>Rotate your phone sideways</div><div dir="rtl">لف الموبايل بالعرض عشان تلعب</div><button id="rotfs">Fullscreen</button></div>
 
+<div id="bootErr" hidden style="position:fixed;inset:0;z-index:40;background:rgba(0,10,16,.94);display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
+  <div style="max-width:420px;margin:20px;background:#00202c;border:2px solid #ca6702;border-radius:18px;padding:22px;color:#e9d8a6;text-align:center;">
+    <h2 style="margin:0 0 10px;font-size:22px;">The game could not start</h2>
+    <p id="bootErrMsg" style="margin:0 0 16px;font-size:15px;color:#94d2bd;"></p>
+    <button onclick="location.reload()" style="font:600 16px system-ui;padding:11px 22px;border-radius:12px;border:2px solid #0a9396;background:#ca6702;color:#001219;cursor:pointer;">Reload</button>
+  </div>
+</div>
+<script>
+/* Boot watchdog: surface a visible error instead of a silent blank canvas. */
+(function () {
+  window.__tdsFrames = 0;
+  var shown = false;
+  function show(msg) {
+    if (shown) return; shown = true;
+    var d = document.getElementById('bootErr');
+    if (!d) return;
+    document.getElementById('bootErrMsg').textContent = msg;
+    d.hidden = false;
+  }
+  window.addEventListener('error', function (e) {
+    if (!window.__tdsFrames) show('Startup error: ' + (e && e.message ? e.message : 'unknown') + '. Try reloading the page.');
+  });
+  window.addEventListener('unhandledrejection', function () {
+    if (!window.__tdsFrames) show('Startup error while loading. Check your connection and reload the page.');
+  });
+  setTimeout(function () {
+    if (!window.__tdsFrames) show('The game did not start within a few seconds. Check your connection and reload the page.');
+  }, 6000);
+})();
+</script>
+
 <script>
 (() => {
 'use strict';
@@ -2262,8 +2293,8 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
   let reloaded = false; navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
 }
 let last = performance.now();
-function frame(now) {
-  requestAnimationFrame(frame);                      // schedule first, so one runtime error can never freeze the whole game
+function tick(now) {
+  window.__tdsFrames = (window.__tdsFrames | 0) + 1;  // boot watchdog heartbeat
   const dt = clamp((now - last) / 1000, 0, 0.05);   // clamp so a lag spike or tab switch can't teleport things
   last = now;
   if (NET.client) clientUpdate(dt); else if (!paused) update(dt);
@@ -2271,7 +2302,14 @@ function frame(now) {
   music();
   render();
 }
+function frame(now) {
+  requestAnimationFrame(frame);                      // schedule first, so one runtime error can never freeze the whole game
+  tick(now);
+}
 requestAnimationFrame(frame);
+// Fallback: in occluded/background tabs (and some embedded/headless browsers) rAF never fires,
+// which used to leave a blank dark canvas. Drive the loop at ~1 fps until rAF takes over.
+setInterval(() => { if (performance.now() - last > 1000) tick(performance.now()); }, 1000);
 })();
 </script>
 </body>
