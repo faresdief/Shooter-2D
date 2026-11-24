@@ -34,3 +34,12 @@ A boot watchdog in `index.html` shows a visible error card with a reload button 
 
 ## Credits
 Gameplay structure ported from the Godot "Top Down Template 2D". Colours are the original palette; all code here is plain HTML/Canvas/JS.
+
+## Online security (Firebase rules)
+Online rooms use a Firebase Realtime Database only to pass short signaling messages between players. The rules in `database.rules.json` lock it down:
+- Nothing is readable or writable by default. Only `tds/tdsq-<code>` room channels are open, and the list of all rooms cannot be read.
+- Every message must be an object with a single `m` string of at most 30000 characters. Messages can be created or deleted but never overwritten.
+- The shared lobby channel (`tdsq-lobby1`) cannot be deleted as a whole.
+- There is no sign-in, so anyone who knows a room code can still read that room's messages. Room passwords are checked by the host, not by the database.
+
+To publish: Firebase console > Realtime Database > Rules, paste the file, Publish.
