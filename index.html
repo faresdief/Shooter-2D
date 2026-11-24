@@ -2316,6 +2316,7 @@ requestAnimationFrame(frame);
 // Fallback: in occluded/background tabs (and some embedded/headless browsers) rAF never fires,
 // which used to leave a blank dark canvas. Drive the loop at ~1 fps until rAF takes over.
 setInterval(() => { if (performance.now() - last > 1000) tick(performance.now()); }, 1000);
+if (window.__TDS_TEST__) window.__tdsEval = c => eval(c);       // test hook (node test/gameplay.mjs), inert in the browser
 })();
 </script>
 </body>

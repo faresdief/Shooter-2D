@@ -4,6 +4,12 @@ A canvas top-down arena shooter ported to a single self-contained `index.html` f
 
 **Live demo:** https://faresdief.github.io/Shooter-2D/
 
+<p>
+  <img src="docs/menu.jpg" width="32%" alt="Main menu">
+  <img src="docs/gameplay.jpg" width="32%" alt="A wave in progress">
+  <img src="docs/upgrade.jpg" width="32%" alt="Upgrade choice between waves">
+</p>
+
 ## Features
 - Story mode, Arcade, Endless and Daily challenge modes
 - Waves, weapons and upgrades, bosses, coins and a shop
@@ -23,11 +29,14 @@ python3 -m http.server 8000
 Opening `index.html` directly also works, but the service worker (offline support) needs HTTP(S).
 
 ## Tests
-A dependency-free smoke test boots the inline game script in a stubbed DOM and pumps the render loop:
+Dependency-free, run with plain Node (no install):
 
 ```bash
-node test/smoke.mjs
+node test/smoke.mjs      # boots the game in a stubbed DOM, checks the render loop and the boot watchdog
+node test/gameplay.mjs   # runs real game functions: weapons, wave sizes, bosses, difficulty, scoring, damage
 ```
+
+The gameplay test reaches the game's internals through a hook that only exists when `window.__TDS_TEST__` is set, so it does nothing in the browser.
 
 ## Resilience
 A boot watchdog in `index.html` shows a visible error card with a reload button instead of a silent blank canvas if startup fails or the first frame never renders.
