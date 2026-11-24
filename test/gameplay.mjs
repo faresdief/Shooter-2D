@@ -40,5 +40,12 @@ check('kill score grows with combo', sc[0] === 10 && sc[1] === 20, JSON.stringif
 const dead = ev(`(() => { startGame(0); enemies.length = 0; spawnAt(300, 300, 'grunt'); const e = enemies[0]; e.health = 1; hitEnemy(e, { x: 300, y: 300, dx: 1, dy: 0, rot: 0, dm: 1, own: player }); return e.dying; })()`);
 check('lethal hit marks the enemy dying', dead === true);
 
+// Charger: appears from level 5, lunges toward the player, never before level 5.
+const types = lv => ev(`(() => { startGame(${lv}); const s = new Set(); for (let i = 0; i < 60; i++) { enemies.length = 0; wave = 0; spawnWave(); enemies.forEach(e => s.add(e.type)); } return [...s]; })()`);
+check('chargers appear on level 6', types(5).includes('charger'));
+check('no chargers on level 2', !types(1).includes('charger'));
+const lunge = ev(`(() => { startGame(5); enemies.length = 0; player.x = 300; player.y = 300; spawnAt(600, 300, 'charger'); const e = enemies[0]; e.ct = 99; const x0 = e.x; for (let i = 0; i < 20; i++) updateEnemies(1 / 60); return x0 - e.x; })()`);
+check('charger lunges toward the player', lunge > 60, '(moved ' + Math.round(lunge) + 'px)');
+
 console.log(failed ? failed + ' check(s) failed' : 'All gameplay checks passed');
 process.exit(failed ? 1 : 0);
