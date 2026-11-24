@@ -1410,6 +1410,42 @@ function drawRooms() {
   });
   button('Back', W / 2, 604, 240, 46, () => { if (LB.es) { LB.es.close(); LB.es = null; } screen = 'menu'; });
 }
+// ---- online leaderboard: one public list of the top scores in the same Firebase database (/tds-scores, create-only, see database.rules.json)
+const SB = { rows: null, status: '', posted: false, busy: false };
+async function sbLoad() {
+  if (!SIG) { SB.status = 'Leaderboard needs the online service'; return; }
+  SB.status = 'Loading...'; SB.rows = null;
+  try {
+    const j = await (await fetch(SIG + '/tds-scores.json?orderBy=%22s%22&limitToLast=10')).json();
+    SB.rows = Object.values(j || {}).filter(r => r && typeof r.n === 'string' && typeof r.s === 'number').sort((a, b) => b.s - a.s).slice(0, 10);
+    SB.status = SB.rows.length ? '' : 'No scores yet. Be the first!';
+  } catch (_) { SB.rows = null; SB.status = 'Could not load the leaderboard'; }
+}
+async function sbPost() {
+  if (SB.busy || SB.posted || !SIG || !(score > 0)) return;
+  if (!NET.name) { await editName(); if (!NET.name) return; }
+  SB.busy = true;
+  try {
+    const r = await fetch(SIG + '/tds-scores.json', { method: 'POST', body: JSON.stringify({ n: NET.name.slice(0, 14), s: Math.min(Math.floor(score), 10000000), t: { '.sv': 'timestamp' } }) });
+    if (!r.ok) throw 0; SB.posted = true; toast = { text: 'Score posted', until: performance.now() + 2500 };
+  } catch (_) { toast = { text: 'Could not post the score', until: performance.now() + 3000 }; }
+  SB.busy = false;
+}
+function openBoard() { screen = 'board'; sbLoad(); }
+function drawBoard() {
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = COLOR.ground; ctx.font = '700 40px ' + UI_FONT; ctx.fillText('Leaderboard', W / 2, 96);
+  ctx.fillStyle = COLOR.gun; ctx.font = '17px ' + UI_FONT; ctx.fillText('Top 10 scores, all modes', W / 2, 124);
+  if (SB.status) { ctx.fillStyle = 'rgba(233,216,166,0.7)'; ctx.font = '20px ' + UI_FONT; ctx.fillText(SB.status, W / 2, 330); }
+  (SB.rows || []).forEach((r, i) => {
+    const y = 170 + i * 40, mine = NET.name && r.n === NET.name;
+    rr(W / 2 - 300, y - 17, 600, 34, 12); ctx.fillStyle = mine ? 'rgba(238,155,0,0.22)' : 'rgba(10,147,148,0.14)'; ctx.fill();
+    ctx.textBaseline = 'middle'; ctx.fillStyle = i < 3 ? '#ee9b00' : COLOR.ground; ctx.font = '700 19px ' + UI_FONT;
+    ctx.textAlign = 'left'; ctx.fillText(String(i + 1), W / 2 - 280, y); ctx.font = '600 19px ' + UI_FONT; ctx.fillText(r.n, W / 2 - 235, y);
+    ctx.textAlign = 'right'; ctx.fillText(String(r.s), W / 2 + 280, y);
+  });
+  button('Refresh', W / 2 - 130, 604, 220, 46, sbLoad); button('Back', W / 2 + 130, 604, 220, 46, () => { screen = 'menu'; });
+}
 function share() {
   const txt = 'I reached level ' + (level + 1) + ' with ' + score + ' points in Top Down Shooter!';
   Promise.resolve(navigator.share ? navigator.share({ text: txt }) : navigator.clipboard.writeText(txt)).catch(() => {});
@@ -1561,7 +1597,7 @@ function hurtPlayer() {
       player = P0;
     }
     if (story) { storyDie(); return; }
-    state = 'over'; overT = 0; pointer.down = false; saveMeta(); saveDaily();
+    state = 'over'; overT = 0; SB.posted = false; pointer.down = false; saveMeta(); saveDaily();
     if (score > best) { best = score; try { localStorage.setItem('tds_best', String(best)); } catch (_) {} }
   }
 }
@@ -1986,7 +2022,7 @@ function render() {
   if (['menu', 'levels', 'shop', 'ach', 'story', 'online', 'rooms'].includes(screen) || (screen === 'settings' && settingsFrom === 'menu')) {
     drawMenuBg();
     drawAtmos();
-    if (screen === 'menu') drawMenu(); else if (screen === 'levels') drawLevels(); else if (screen === 'shop') drawShop(); else if (screen === 'story') drawStoryMenu(); else if (screen === 'online') drawOnline(); else if (screen === 'rooms') drawRooms(); else if (screen === 'ach') drawAch(); else if (screen === 'charms') drawCharms(); else drawSettings();
+    if (screen === 'menu') drawMenu(); else if (screen === 'levels') drawLevels(); else if (screen === 'shop') drawShop(); else if (screen === 'story') drawStoryMenu(); else if (screen === 'online') drawOnline(); else if (screen === 'rooms') drawRooms(); else if (screen === 'ach') drawAch(); else if (screen === 'board') drawBoard(); else if (screen === 'charms') drawCharms(); else drawSettings();
     finishUI();
     return;
   }
@@ -2094,7 +2130,7 @@ function drawMenu() {
   button('Story mode', W / 2, 236, 340, 44, openStory, 'primary');
   button('Arcade', W / 2, 288, 340, 44, () => { screen = 'levels'; }, 'primary'); button('Endless', W / 2 + 255, 288, 130, 44, startEndless);
   button('Online', W / 2, 340, 340, 44, openOnline, 'primary');
-  button('Daily challenge' + (dailyBest ? '  ·  ' + dailyBest : ''), W / 2, 392, 340, 44, startDaily);
+  button('Daily challenge' + (dailyBest ? '  ·  ' + dailyBest : ''), W / 2, 392, 340, 44, startDaily); button('Scores', W / 2 + 255, 392, 130, 44, openBoard);
   button('Shop  ·  ' + wallet + ' coins', W / 2, 444, 340, 44, () => { screen = 'shop'; });
   button('Achievements  ' + Object.keys(ach).length + '/' + ACH.length, W / 2, 496, 340, 44, () => { screen = 'ach'; });
   button('Settings', W / 2, 548, 340, 44, openSettings);
@@ -2298,7 +2334,7 @@ function drawGameOver() {
   ctx.fillText('Score ' + score + '   Best ' + best + '   Wave ' + wave, W / 2, 312);
   ctx.font = '18px ' + UI_FONT; ctx.fillText('Kills ' + stats.kills + '   Time ' + fmt(stats.time), W / 2, 346);
   ctx.fillStyle = 'rgba(233,216,166,0.8)'; ctx.font = '20px ' + UI_FONT;
-  if (overT > 0.6) { button('Play again', W / 2, 410, 300, 60, reset, 'primary'); button('Main menu', W / 2, 488, 300, 60, goMenu); button('Share score', W / 2, 566, 300, 56, share); }
+  if (overT > 0.6) { button('Play again', W / 2, 410, 300, 60, reset, 'primary'); button('Main menu', W / 2, 488, 300, 60, goMenu); button('Share score', W / 2, 566, 300, 56, share); if (SIG && score > 0 && !NET.on) button(SB.posted ? 'Score posted' : 'Post to leaderboard', W / 2 + 230, 410, 230, 60, sbPost, SB.posted ? 'on' : ''); }
 }
 
 /* ------------------------------- main loop --------------------------- */
