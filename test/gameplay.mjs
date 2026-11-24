@@ -13,6 +13,7 @@ const ids = Object.keys(W);
 check('weapons defined', ids.length >= 5, ids.join(','));
 check('every weapon has positive cooldown, damage, speed', ids.every(k => W[k].cd > 0 && W[k].dm > 0 && W[k].sp > 0 && W[k].n >= 1));
 check('pistol is free, others cost coins', W.pistol.price === 0 && ids.filter(k => k !== 'pistol').every(k => W[k].price > 0));
+check('lancer sits between blaster and railgun in price', W.lancer && W.lancer.price > W.blaster.price && W.lancer.price < W.rail.price);
 check('railgun pierces, shotgun fires a spread', W.rail.pierce >= 99 && W.shotgun.n > 1);
 
 // Firing a weapon creates the right number of bullets.
@@ -28,7 +29,7 @@ check('final wave of level 1 has a boss', waves[waves.length - 1].types.includes
 check('early waves have no boss', waves.slice(0, -1).every(w => !w.types.includes('boss')));
 
 // Difficulty: higher levels give tougher enemies.
-const hpAt = lv => ev(`(() => { startGame(${lv}); enemies.length = 0; spawnWave(); return Math.max(...enemies.map(e => e.type === 'grunt' ? e.max : 0)); })()`);
+const hpAt = lv => ev(`(() => { startGame(${lv}); enemies.length = 0; spawnAt(400, 300, 'grunt'); return enemies[0].max; })()`);
 check('level 12 grunts have more health than level 1', hpAt(11) > hpAt(0));
 check('level 30 is a mega boss level', ev(`(() => { startGame(9); enemies.length = 0; wave = LEVELS[9].waves - 1; spawnWave(); return enemies.some(e => e.type === 'mega'); })()`));
 
@@ -46,6 +47,11 @@ check('chargers appear on level 6', types(5).includes('charger'));
 check('no chargers on level 2', !types(1).includes('charger'));
 const lunge = ev(`(() => { startGame(5); enemies.length = 0; player.x = 300; player.y = 300; spawnAt(600, 300, 'charger'); const e = enemies[0]; e.ct = 99; const x0 = e.x; for (let i = 0; i < 20; i++) updateEnemies(1 / 60); return x0 - e.x; })()`);
 check('charger lunges toward the player', lunge > 60, '(moved ' + Math.round(lunge) + 'px)');
+
+// Late bosses shoot a ring of bullets; early ones do not.
+const ring = lv => ev(`(() => { startGame(${lv}); enemies.length = 0; eBullets.length = 0; player.x = 200; player.y = 200; spawnAt(700, 300, 'boss'); const e = enemies[0]; e.ring = 0; updateEnemies(1 / 60); return eBullets.length; })()`);
+check('level 10 boss fires a ring volley', ring(9) >= 8, '(' + ring(9) + ' bullets)');
+check('level 3 boss does not', ring(2) === 0);
 
 console.log(failed ? failed + ' check(s) failed' : 'All gameplay checks passed');
 process.exit(failed ? 1 : 0);
