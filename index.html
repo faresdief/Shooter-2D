@@ -414,6 +414,7 @@ const WEAPONS = {
   smg:     { name: 'SMG',     tag: 'SMG', price: 120, cd: 0.45, n: 1, spread: 0.1, dm: 0.7, sp: 950,  hl: 5,  hw: 2.5, mz: 50, col: '#ee9b00', shape: 'bar', pierce: 0 },
   shotgun: { name: 'Shotgun', tag: 'SG',  price: 200, cd: 2.6,  n: 6, spread: 0,   dm: 0.6, sp: 700,  hl: 4,  hw: 4,   mz: 56, col: '#bb3e03', shape: 'orb', pierce: 0 },
   blaster: { name: 'Blaster', tag: 'BL',  price: 300, cd: 1.6,  n: 1, spread: 0,   dm: 2,   sp: 480,  hl: 9,  hw: 9,   mz: 54, col: '#7b2cbf', shape: 'orb', pierce: 1 },
+  lancer:  { name: 'Lancer',  tag: 'LN',  price: 380, cd: 1.15, n: 1, spread: 0,   dm: 2.2, sp: 1100, hl: 18, hw: 3,   mz: 62, col: '#ae2012', shape: 'bar', pierce: 2 },
   rail:    { name: 'Railgun', tag: 'RG',  price: 450, cd: 3.2,  n: 1, spread: 0,   dm: 3,   sp: 1500, hl: 26, hw: 2.5, mz: 74, col: '#00b4d8', shape: 'bar', pierce: 99 }
 };
 const SKINS = [{ n: 'Teal', c: '#0a9396', p: 0 }, { n: 'Crimson', c: '#c1121f', p: 80 }, { n: 'Violet', c: '#7b2cbf', p: 80 }, { n: 'Gold', c: '#ee9b00', p: 120 }, { n: 'Ghost', c: '#e9ecef', p: 150 }];
@@ -488,6 +489,7 @@ function wsound(id) {
     o.type = 'sine'; o.frequency.setValueAtTime(110, n); o.frequency.exponentialRampToValueAtTime(40, n + 0.2);
   } else if (id === 'smg') { o.type = 'square'; o.frequency.setValueAtTime(520, n); o.frequency.exponentialRampToValueAtTime(260, n + 0.05); env(0.05, 0.06); }
   else if (id === 'blaster') { o.type = 'sawtooth'; o.frequency.setValueAtTime(180, n); o.frequency.exponentialRampToValueAtTime(700, n + 0.25); env(0.07, 0.3); }
+  else if (id === 'lancer') { o.type = 'triangle'; o.frequency.setValueAtTime(900, n); o.frequency.exponentialRampToValueAtTime(140, n + 0.18); env(0.08, 0.22); }
   else { o.type = 'sine'; o.frequency.setValueAtTime(2200, n); o.frequency.exponentialRampToValueAtTime(120, n + 0.35); env(0.09, 0.4); }
   o.connect(g); o.start(n); o.stop(n + 0.45);
 }
@@ -1506,7 +1508,7 @@ function dropLoot(e) {
     if (Math.hypot(e.x - player.x, e.y - player.y) < 110) hurtPlayer();
   }
   award('first'); if (e.elite) award('elite'); if (e.type === 'boss' || e.type === 'mega') misAdd('boss', 1); if (e.type === 'boss') award('boss'); if (e.type === 'mega') award('mega');
-  if (Math.random() < 0.06 + (e.type === 'boss' || e.type === 'mega' ? 0.5 : 0)) pickups.push({ x: e.x, y: e.y, t: 0, w: ['smg', 'shotgun', 'blaster', 'rail'][Math.random() * 4 | 0] });
+  if (Math.random() < 0.06 + (e.type === 'boss' || e.type === 'mega' ? 0.5 : 0)) pickups.push({ x: e.x, y: e.y, t: 0, w: ['smg', 'shotgun', 'blaster', 'lancer', 'rail'][Math.random() * 5 | 0] });
   if (e.type === 'boss' || e.type === 'mega') score += e.type === 'mega' ? 500 : 100;
   if (e.type === 'boss' || e.type === 'mega' || Math.random() < 0.08) pickups.push({ x: e.x, y: e.y, t: 0 });
 }
@@ -1729,6 +1731,10 @@ function updateEnemies(dt) {
       if (e.dash > 0) { e.dash -= dt; e.x += e.dx0 * 480 * dt; e.y += e.dy0 * 480 * dt; }
       else if (e.ct > 3 + (e.id0 = e.id0 || Math.random()) * 1.2 && dist < 420 && dist > 90) { e.ct = 0; e.wind = 0.35; e.dash = 0.45; e.dx0 = dx / dist; e.dy0 = dy / dist; blip(160, 0.12, 'sawtooth'); }
     }
+    if (e.type === 'boss' && level >= 9 && !e.dying) {          // late bosses fire a ring volley, faster below half health
+      e.ring -= dt;
+      if (e.ring <= 0) { const nn = 8 + Math.min(Math.floor(level / 10), 3) * 2, off = Math.random() * 6.28; for (let k = 0; k < nn; k++) shootE(e.x, e.y, off + k / nn * 6.283, 170); e.ring = e.health < e.max / 2 ? 2.4 : 3.8; blip(120, 0.15, 'square'); }
+    }
     if (e.type === 'shooter' || e.type === 'mega') {          // ranged attacks
       e.shootT -= dt;
       const aim = Math.atan2(dy, dx), tr = Math.floor(level / 10);
@@ -1949,6 +1955,7 @@ function drawGun(id) {                              // the weapon in the player'
   else if (id === 'smg') { ctx.fillRect(18, -5, 30, 10); ctx.fillRect(24, 4, 7, 12); }
   else if (id === 'shotgun') { ctx.fillRect(16, -9, 38, 7); ctx.fillRect(16, 2, 38, 7); }
   else if (id === 'blaster') { ctx.fillRect(16, -8, 24, 16); ctx.fillStyle = w.col; ctx.beginPath(); ctx.arc(44, 0, 9, 0, 7); ctx.fill(); }
+  else if (id === 'lancer') { ctx.fillRect(16, -5, 46, 10); ctx.fillStyle = w.col; ctx.fillRect(62, -2, 14, 4); }
   else ctx.fillRect(16, -4, 58, 8);
   ctx.fillStyle = w.col; if (id !== 'blaster') ctx.fillRect(id === 'rail' ? 44 : 30, -2, 6, 4);
 }
@@ -2101,7 +2108,7 @@ function drawMenu() {
     ctx.fillStyle = 'rgba(148,210,189,0.2)'; ctx.fillRect(56, 328 + i * 42, 260, 6); ctx.fillStyle = dn ? '#ee9b00' : '#94d2bd'; ctx.fillRect(56, 328 + i * 42, 260 * pr / m.t, 6);
   });
 }
-function card(cx, top, h) { rr(cx - 102, top, 204, h, 18); ctx.fillStyle = 'rgba(0,31,44,0.92)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,147,148,0.55)'; ctx.stroke(); }
+function card(cx, top, h, cw) { cw = cw || 204; rr(cx - cw / 2, top, cw, h, 18); ctx.fillStyle = 'rgba(0,31,44,0.92)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,147,148,0.55)'; ctx.stroke(); }
 function bar(cx, y, label, f) {
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = 'rgba(233,216,166,0.75)'; ctx.font = '13px ' + UI_FONT; ctx.fillText(label, cx - 88, y);
   rr(cx - 28, y - 4, 118, 8, 4); ctx.fillStyle = 'rgba(148,210,189,0.18)'; ctx.fill();
@@ -2119,8 +2126,8 @@ function drawShop() {
   ctx.fillStyle = '#ee9b00'; ctx.font = '600 20px ' + UI_FONT; ctx.fillText('Coins: ' + wallet, W / 2, 98);
   ['Weapons', 'Upgrades', 'Skins'].forEach((n, i) => button(n, W / 2 + (i - 1) * 190, 148, 176, 44, () => { shopTab = i; }, shopTab === i ? 'on' : ''));
   if (shopTab === 0) Object.keys(WEAPONS).forEach((id, i) => {
-    const w = WEAPONS[id], cx = W / 2 + (i - 2) * 222, top = 200, own = meta.own.includes(id);
-    card(cx, top, 340);
+    const w = WEAPONS[id], cx = W / 2 + (i - 2.5) * 192, top = 200, own = meta.own.includes(id);
+    card(cx, top, 340, 184);
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = COLOR.ground; ctx.font = '700 21px ' + UI_FONT; ctx.fillText(w.name, cx, top + 34);
     rr(cx - 84, top + 52, 168, 112, 14); ctx.fillStyle = 'rgba(233,216,166,0.9)'; ctx.fill();   // light plate so dark guns read well
     ctx.save(); ctx.translate(cx, top + 78); ctx.fillStyle = w.col; ctx.shadowColor = w.col; ctx.shadowBlur = 12;
@@ -2128,7 +2135,7 @@ function drawShop() {
     ctx.restore();
     ctx.save(); ctx.translate(cx - 58, top + 132); ctx.scale(1.3, 1.3); drawGun(id); ctx.restore();
     bar(cx, top + 186, 'Power', w.dm * w.n / 3.6); bar(cx, top + 212, 'Rate', 1 / w.cd / 2.3); bar(cx, top + 238, 'Speed', w.sp / 1500);
-    buyBtn(cx, top + 298, own, meta.eq === id, w.price, () => { if (!own) meta.own.push(id); meta.eq = id; if (meta.own.length >= 5) award('arsenal'); });
+    buyBtn(cx, top + 298, own, meta.eq === id, w.price, () => { if (!own) meta.own.push(id); meta.eq = id; if (meta.own.length >= Object.keys(WEAPONS).length) award('arsenal'); });
   });
   else if (shopTab === 2) SKINS.forEach((s, i) => {
     const cx = W / 2 + (i - 2) * 222, top = 200, own = meta.skins.includes(i);
