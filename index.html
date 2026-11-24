@@ -33,7 +33,7 @@
 <canvas id="game" width="1152" height="648"></canvas>
 <div id="rot"><div style="font-size:60px">&#8635;</div><div>Rotate your phone sideways</div><div dir="rtl">لف الموبايل بالعرض عشان تلعب</div><button id="rotfs">Fullscreen</button></div>
 
-<div id="bootErr" hidden style="position:fixed;inset:0;z-index:40;background:rgba(0,10,16,.94);display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
+<div id="bootErr" hidden style="position:fixed;inset:0;z-index:40;background:rgba(0,10,16,.94);display:none;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
   <div style="max-width:420px;margin:20px;background:#00202c;border:2px solid #ca6702;border-radius:18px;padding:22px;color:#e9d8a6;text-align:center;">
     <h2 style="margin:0 0 10px;font-size:22px;">The game could not start</h2>
     <p id="bootErrMsg" style="margin:0 0 16px;font-size:15px;color:#94d2bd;"></p>
@@ -50,17 +50,23 @@
     var d = document.getElementById('bootErr');
     if (!d) return;
     document.getElementById('bootErrMsg').textContent = msg;
-    d.hidden = false;
+    d.hidden = false; d.style.display = 'flex';
   }
+  function hide() { var d = document.getElementById('bootErr'); if (d) { d.hidden = true; d.style.display = 'none'; } }
+  window.__tdsBootOk = hide;
   window.addEventListener('error', function (e) {
     if (!window.__tdsFrames) show('Startup error: ' + (e && e.message ? e.message : 'unknown') + '. Try reloading the page.');
   });
   window.addEventListener('unhandledrejection', function () {
-    if (!window.__tdsFrames) show('Startup error while loading. Check your connection and reload the page.');
+    if (false) show('Startup error while loading. Check your connection and reload the page.');
   });
-  setTimeout(function () {
-    if (!window.__tdsFrames) show('The game did not start within a few seconds. Check your connection and reload the page.');
-  }, 6000);
+  /* rAF is paused in background tabs, so only judge while the tab is visible; recover if frames start later */
+  var waited = 0;
+  var iv = setInterval(function () {
+    if (window.__tdsFrames) { clearInterval(iv); hide(); return; }
+    if (!document.hidden) waited += 500;
+    if (waited >= 8000) { clearInterval(iv); show('The game did not start within a few seconds. Check your connection and reload the page.'); setInterval(function () { if (window.__tdsFrames) hide(); }, 500); }
+  }, 500);
 })();
 </script>
 
