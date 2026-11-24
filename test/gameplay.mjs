@@ -53,5 +53,13 @@ const ring = lv => ev(`(() => { startGame(${lv}); enemies.length = 0; eBullets.l
 check('level 10 boss fires a ring volley', ring(9) >= 8, '(' + ring(9) + ' bullets)');
 check('level 3 boss does not', ring(2) === 0);
 
+// Leaderboard: the posted entry matches the shape the database rules accept.
+import { readFileSync } from 'node:fs';
+const rules = JSON.parse(readFileSync(new URL('../database.rules.json', import.meta.url), 'utf8')).rules;
+check('rules lock the root and index scores by s', rules['.read'] === false && rules['.write'] === false && rules['tds-scores']['.indexOn'][0] === 's');
+const sent = ev(`(async () => { startGame(0); score = 1234; NET.name = 'Tester'; let body; const old = fetch; window.fetch = (u, o) => { body = o && o.body; return Promise.resolve({ ok: true }); }; await sbPost(); window.fetch = old; return body; })()`);
+const sentObj = JSON.parse(await sent);
+check('posted entry has exactly n, s, t', Object.keys(sentObj).sort().join() === 'n,s,t' && sentObj.n === 'Tester' && sentObj.s === 1234 && sentObj.t['.sv'] === 'timestamp', JSON.stringify(sentObj));
+
 console.log(failed ? failed + ' check(s) failed' : 'All gameplay checks passed');
 process.exit(failed ? 1 : 0);
