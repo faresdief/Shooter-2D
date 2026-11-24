@@ -12,7 +12,8 @@ A canvas top-down arena shooter ported to a single self-contained `index.html` f
 
 ## Features
 - Story mode, Arcade, Endless and Daily challenge modes
-- Waves, weapons and upgrades, bosses, coins and a shop
+- Waves, six weapons (including the piercing Lancer), upgrades, bosses, coins and a shop
+- Charger enemies from level 5 that wind up and lunge, and boss bullet rings from level 10
 - Achievements, daily missions, persistent saves (localStorage, import/export)
 - Touch, keyboard/mouse and gamepad controls
 - Online top-10 leaderboard (Scores button on the menu, post from the game-over screen)
@@ -51,6 +52,6 @@ Online rooms use a Firebase Realtime Database only to pass short signaling messa
 - Every message must be an object with a single `m` string of at most 30000 characters. Messages can be created or deleted but never overwritten.
 - The shared lobby channel (`tdsq-lobby1`) cannot be deleted as a whole.
 - There is no sign-in, so anyone who knows a room code can still read that room's messages. Room passwords are checked by the host, not by the database.
+- `tds-scores` holds the leaderboard: anyone can read it, entries can only be created (never changed or deleted), and each one must be a name up to 14 characters, a whole-number score from 1 to 10,000,000 and a server timestamp. The game runs in the browser, so a determined player can still post a made-up score within that range.
 
 To publish: Firebase console > Realtime Database > Rules, paste the file, Publish.
-- `tds-scores` holds the leaderboard: anyone can read it, entries can only be created (never changed or deleted), and each one must be a name up to 14 characters, a whole-number score from 1 to 10,000,000 and a server timestamp. The game runs in the browser, so a determined player can still post a made-up score within that range.
