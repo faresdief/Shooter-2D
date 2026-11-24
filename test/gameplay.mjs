@@ -1,0 +1,44 @@
+// Gameplay tests: run real game functions inside the stubbed DOM and check the rules.
+// Run: node test/gameplay.mjs
+import { boot } from './harness.mjs';
+
+const { g } = boot({ test: true });
+const ev = code => g.__tdsEval(code);
+let failed = 0;
+function check(name, ok, extra = '') { console.log((ok ? 'PASS ' : 'FAIL ') + name + (extra ? ' ' + extra : '')); if (!ok) failed++; }
+
+// Weapons: every weapon has sane stats and the shop order goes up in price.
+const W = ev('JSON.parse(JSON.stringify(WEAPONS))');
+const ids = Object.keys(W);
+check('weapons defined', ids.length >= 5, ids.join(','));
+check('every weapon has positive cooldown, damage, speed', ids.every(k => W[k].cd > 0 && W[k].dm > 0 && W[k].sp > 0 && W[k].n >= 1));
+check('pistol is free, others cost coins', W.pistol.price === 0 && ids.filter(k => k !== 'pistol').every(k => W[k].price > 0));
+check('railgun pierces, shotgun fires a spread', W.rail.pierce >= 99 && W.shotgun.n > 1);
+
+// Firing a weapon creates the right number of bullets.
+for (const id of ids) {
+  const n = ev(`(() => { startGame(0); weapon.id = '${id}'; bullets.length = 0; shoot(); return bullets.length; })()`);
+  check('shoot() with ' + id + ' fires ' + W[id].n + ' bullet(s)', n === W[id].n, '(got ' + n + ')');
+}
+
+// Waves: enemy count and strength never go down within a level, and the last wave has a boss.
+const waves = ev(`(() => { const out = []; startGame(0); for (let i = 0; i < LEVELS[0].waves; i++) { enemies.length = 0; spawnWave(); out.push({ n: enemies.length, hp: enemies[0].max, types: enemies.map(e => e.type) }); } return out; })()`);
+check('wave sizes do not shrink', waves.every((w, i) => i === 0 || w.n >= waves[i - 1].n), JSON.stringify(waves.map(w => w.n)));
+check('final wave of level 1 has a boss', waves[waves.length - 1].types.includes('boss'));
+check('early waves have no boss', waves.slice(0, -1).every(w => !w.types.includes('boss')));
+
+// Difficulty: higher levels give tougher enemies.
+const hpAt = lv => ev(`(() => { startGame(${lv}); enemies.length = 0; spawnWave(); return Math.max(...enemies.map(e => e.type === 'grunt' ? e.max : 0)); })()`);
+check('level 12 grunts have more health than level 1', hpAt(11) > hpAt(0));
+check('level 30 is a mega boss level', ev(`(() => { startGame(9); enemies.length = 0; wave = LEVELS[9].waves - 1; spawnWave(); return enemies.some(e => e.type === 'mega'); })()`));
+
+// Scoring: combo raises the points per kill.
+const sc = ev(`(() => { startGame(0); score = 0; combo = 0; onKill(); const a = score; onKill(); const b = score - a; return [a, b]; })()`);
+check('kill score grows with combo', sc[0] === 10 && sc[1] === 20, JSON.stringify(sc));
+
+// Damage: a hit removes health and kills at zero.
+const dead = ev(`(() => { startGame(0); enemies.length = 0; spawnAt(300, 300, 'grunt'); const e = enemies[0]; e.health = 1; hitEnemy(e, { x: 300, y: 300, dx: 1, dy: 0, rot: 0, dm: 1, own: player }); return e.dying; })()`);
+check('lethal hit marks the enemy dying', dead === true);
+
+console.log(failed ? failed + ' check(s) failed' : 'All gameplay checks passed');
+process.exit(failed ? 1 : 0);
