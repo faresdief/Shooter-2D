@@ -1,4 +1,4 @@
-const C = 'tds-v13', FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+const C = 'tds-v13', FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg', './2-shooter-game.js'];
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(C).then(c => Promise.allSettled(FILES.map(f => c.add(new Request(f, { cache: 'reload' })))))); });
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('tds-') && k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {
