@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+    <!-- Link preview (Open Graph / Twitter) -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://faresdief.github.io/Shooter-2D/">
+    <meta property="og:title" content="Shooter-2D | Free Top-Down Arena Game">
+    <meta property="og:description" content="Play Shooter-2D in your browser. Survive waves, upgrade weapons and take on bosses in Story, Arcade, Endless and Daily Challenge modes. Keyboard and touch controls.">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://faresdief.github.io/Shooter-2D/og-image.jpg">
+    <meta property="og:image:type" content="image/jpeg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Top Down Shooter gameplay">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Shooter-2D | Free Top-Down Arena Game">
+    <meta name="twitter:description" content="Play Shooter-2D in your browser. Survive waves, upgrade weapons and take on bosses in Story, Arcade, Endless and Daily Challenge modes. Keyboard and touch controls.">
+    <meta name="twitter:image" content="https://faresdief.github.io/Shooter-2D/og-image.jpg">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shooter-2D | Free Top-Down Arena Game</title>
+<meta name="description" content="Play Shooter-2D in your browser. Survive waves, upgrade weapons and take on bosses in Story, Arcade, Endless and Daily Challenge modes. Keyboard and touch controls.">
+<link rel="canonical" href="https://faresdief.github.io/Shooter-2D/">
+<meta name="twitter:image:alt" content="Shooter-2D browser game preview">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":["VideoGame","WebApplication"],"name":"Shooter-2D","alternateName":"Top Down Shooter","url":"https://faresdief.github.io/Shooter-2D/","description":"Play Shooter-2D in your browser. Survive waves, upgrade weapons and take on bosses in Story, Arcade, Endless and Daily Challenge modes. Keyboard and touch controls.","genre":"Top-down arena shooter","gamePlatform":"Web browser","applicationCategory":"GameApplication","inLanguage":["en","ar"],"isAccessibleForFree":true,"image":"https://faresdief.github.io/Shooter-2D/og-image.jpg"}
+</script>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#001219">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #001219; overflow: hidden; overscroll-behavior: none; position: fixed; inset: 0; touch-action: none; -webkit-touch-callout: none; }
+  canvas {
+    position: absolute; display: block; left: 0; top: 0;
+    width: 100vw; height: 56.25vw; max-height: 100vh;     /* first paint only: the script sets the real pixel size */
+    cursor: crosshair; touch-action: none; -webkit-user-select: none; user-select: none;
+  }
+  #rot { display: none; position: fixed; inset: 0; z-index: 10; background: #001219; color: #e9d8a6; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; font: 600 22px system-ui, sans-serif; padding: 24px; }
+  #rot button { font: 600 18px system-ui; padding: 12px 22px; border-radius: 14px; border: 2px solid #0a9396; background: #ca6702; color: #001219; }
+  @media (orientation: portrait) and (pointer: coarse) { #rot { display: flex; } canvas { visibility: hidden; } }
+  .ov { position: fixed; inset: 0; z-index: 20; background: rgba(0,10,16,0.84); display: flex; align-items: center; justify-content: center; font-family: system-ui, "Segoe UI", Tahoma, sans-serif; }
+  .box { width: min(92vw, 430px); background: #00202c; border: 2px solid #0a9396; border-radius: 22px; padding: 22px; color: #e9d8a6; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  .box h2 { margin: 0 0 14px; font-size: 24px; }
+  .box .row { margin-bottom: 14px; } .box label { display: block; font-size: 14px; color: #94d2bd; margin-bottom: 6px; }
+  .box input { width: 100%; box-sizing: border-box; font-size: 17px; padding: 11px 13px; border-radius: 12px; border: 2px solid #0a9396; background: #001219; color: #e9d8a6; outline: none; }
+  .box input:focus { border-color: #ee9b00; }
+  .seg { display: flex; gap: 8px; } .seg button { flex: 1; font-size: 16px; padding: 10px 6px; border-radius: 12px; border: 2px solid #0a9396; background: transparent; color: #e9d8a6; cursor: pointer; }
+  .seg button.on { background: #0a9396; color: #001219; font-weight: 700; }
+  .bar { display: flex; gap: 10px; margin-top: 6px; } .bar button { flex: 1; font-size: 17px; padding: 12px; border-radius: 14px; border: 2px solid #0a9396; background: transparent; color: #e9d8a6; cursor: pointer; }
+  .bar button.pri { background: #ca6702; border-color: #ca6702; color: #001219; font-weight: 700; }
+  #guide { position:fixed; inset:0; z-index:15; overflow:auto; overscroll-behavior:contain; touch-action:pan-y pinch-zoom; color:#ecdfba; background:#001219; font:16px/1.55 system-ui,sans-serif; }
+  #guide[hidden] { display:none; }
+  #guide .intro { max-width:880px; box-sizing:border-box; padding:clamp(20px,5vw,50px); margin:auto; }
+  #guide .eyebrow { margin:0; color:#94d2bd; font-weight:700; font-size:.85rem; letter-spacing:.09em; }
+  #guide h1 { margin:3px 0 8px; color:#f4e7c7; font-size:clamp(2.2rem,7vw,4.3rem); line-height:1.05; }
+  #guide h2 { margin:0 0 6px; font-size:1.25rem; color:#94d2bd; }
+  #guide p { margin:0 0 12px; }
+  #guide button { border:0; border-radius:12px; padding:13px 22px; color:#001219; background:#ee9b00; font:700 1rem system-ui,sans-serif; cursor:pointer; }
+  #guide button:focus-visible, #guide a:focus-visible { outline:3px solid white; outline-offset:4px; }
+  #guide .guide-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:20px; }
+  #guide section { padding:14px; border:1px solid #0a6a72; border-radius:14px; background:#00202c; }
+  #guide ul { padding-inline-start:20px; margin:0; }
+  #guide .arabic { margin-top:12px; }
+  #guide a { color:#94d2bd; }
+  @media(max-width:540px) { #guide .guide-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<canvas id="game" width="1152" height="648" tabindex="-1" aria-label="Shooter-2D game area"></canvas>
+<main id="guide" aria-labelledby="guideTitle">
+  <div class="intro">
+    <p class="eyebrow">FREE BROWSER GAME</p>
+    <h1 id="guideTitle">Shooter-2D</h1>
+    <p>Survive waves of enemies in a top-down arena. Earn coins, upgrade your weapons and take on bosses. Play Story, Arcade, Endless or the Daily Challenge right in your browser.</p>
+    <button type="button" id="playNow">Play Shooter-2D</button>
+    <div class="guide-grid">
+      <section aria-labelledby="desktopControls"><h2 id="desktopControls">Keyboard and mouse</h2><ul><li>Move with WASD or the arrow keys.</li><li>Aim with the mouse and hold left click to shoot.</li><li>Hold a direction and press Shift to dash. Press E or Space to use Nova.</li><li>Press P or Escape to pause.</li></ul></section>
+      <section aria-labelledby="phoneControls"><h2 id="phoneControls">Phone and tablet</h2><ul><li>Turn your phone sideways to play.</li><li>Drag on the left to move; drag on the right to aim and shoot.</li><li>Tap Dash while moving. If needed, choose Phone under Controls in Settings.</li></ul></section>
+    </div>
+    <section class="arabic" lang="ar" dir="rtl"><h2>طريقة اللعب</h2><p>صوّب وواجه موجات الأعداء، وطوّر أسلحتك بين الجولات. على الموبايل، لف الشاشة بالعرض واسحب على الشمال للحركة وعلى اليمين للتصويب والضرب.</p></section>
+    <noscript><p>Turn on JavaScript to play the game. You can still read the controls above.</p></noscript>
+  </div>
+</main>
+<div id="rot"><div style="font-size:60px">&#8635;</div><div>Rotate your phone sideways</div><div dir="rtl">لف الموبايل بالعرض عشان تلعب</div><button id="rotfs">Fullscreen</button></div>
+
+<div id="bootErr" hidden style="position:fixed;inset:0;z-index:40;background:rgba(0,10,16,.94);display:none;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
+  <div style="max-width:420px;margin:20px;background:#00202c;border:2px solid #ca6702;border-radius:18px;padding:22px;color:#e9d8a6;text-align:center;">
+    <h2 style="margin:0 0 10px;font-size:22px;">The game could not start</h2>
+    <p id="bootErrMsg" style="margin:0 0 16px;font-size:15px;color:#94d2bd;"></p>
+    <button onclick="location.reload()" style="font:600 16px system-ui;padding:11px 22px;border-radius:12px;border:2px solid #0a9396;background:#ca6702;color:#001219;cursor:pointer;">Reload</button>
+  </div>
+</div>
+<script>
+/* Boot watchdog: surface a visible error instead of a silent blank canvas. */
+(function () {
+  window.__tdsFrames = 0;
+  var shown = false;
+  function show(msg) {
+    if (shown) return; shown = true;
+    var d = document.getElementById('bootErr');
+    if (!d) return;
+    document.getElementById('bootErrMsg').textContent = msg;
+    d.hidden = false; d.style.display = 'flex';
+  }
+  function hide() { var d = document.getElementById('bootErr'); if (d) { d.hidden = true; d.style.display = 'none'; } }
+  window.__tdsBootOk = hide;
+  window.addEventListener('error', function (e) {
+    if (!window.__tdsFrames) show('Startup error: ' + (e && e.message ? e.message : 'unknown') + '. Try reloading the page.');
+  });
+  window.addEventListener('unhandledrejection', function () {
+    if (false) show('Startup error while loading. Check your connection and reload the page.');
+  });
+  /* rAF is paused in background tabs, so only judge while the tab is visible; recover if frames start later */
+  var waited = 0;
+  var iv = setInterval(function () {
+    if (window.__tdsFrames) { clearInterval(iv); hide(); return; }
+    if (!document.hidden) waited += 500;
+    if (waited >= 8000) { clearInterval(iv); show('The game did not start within a few seconds. Check your connection and reload the page.'); setInterval(function () { if (window.__tdsFrames) hide(); }, 500); }
+  }, 500);
+})();
+</script>
+
+<script src="2-shooter-game.js" defer></script>
+</body>
+</html>
