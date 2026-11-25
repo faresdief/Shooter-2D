@@ -3,10 +3,10 @@
 // Scenario 2: rAF starved (occluded tab) -> the setInterval fallback keeps
 //             rendering and the boot watchdog stays quiet.
 // Run: node test/smoke.mjs
-import { boot, html } from './harness.mjs';
+import { boot, html, scripts } from './harness.mjs';
 
 for (const needle of ['id="bootErr"', "addEventListener('error'", 'window.__tdsFrames = (window.__tdsFrames | 0) + 1', 'setInterval(() => { if (performance.now() - last > 1000)']) {
-  if (!html.includes(needle)) { console.error('FAIL: missing boot-resilience piece:', needle); process.exit(1); }
+  if (![html, ...scripts].some(source => source.includes(needle))) { console.error('FAIL: missing boot-resilience piece:', needle); process.exit(1); }
 }
 
 // Scenario 1: rAF driven

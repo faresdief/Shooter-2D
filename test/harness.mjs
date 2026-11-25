@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 export const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+export const scripts = [...html.matchAll(/<script(?: src="([^"]+)" defer)?>([\s\S]*?)<\/script>/g)].map(m => m[1] ? readFileSync(new URL('../' + m[1], import.meta.url), 'utf8') : m[2]);
 
 function makeStub() {
   const fn = function () { return stub; };
